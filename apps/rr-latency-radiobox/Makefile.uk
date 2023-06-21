@@ -1,0 +1,3 @@
+$(eval $(call addlib,apprrlatency))
+
+APPRRLATENCY_SRCS-y += $(APPRRLATENCY_BASE)/main.c

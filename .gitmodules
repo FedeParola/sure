@@ -1,0 +1,9 @@
+[submodule "unikraft"]
+	path = unikraft
+	url = https://github.com/FedeParola/unikraft.git
+[submodule "libs/lib-h2os"]
+	path = libs/lib-h2os
+	url = https://github.com/FedeParola/lib-h2os.git
+[submodule "libs/lib-lwip"]
+	path = libs/lib-lwip
+	url = https://github.com/unikraft/lib-lwip.git

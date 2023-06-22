@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <sys/un.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -14,14 +15,17 @@
 #define SERVER_IP 0x0100007f /* localhost, already in nbo */
 #define SERVER_PORT 5000
 #define MAX_MSG_SIZE 4096
+#define SOCKET_PATH "/tmp/rr-latency.sock"
 
 static unsigned opt_iterations = 0;
 static unsigned opt_size = 0;
 static int opt_client = 0;
+static int opt_unix = 0;
 static struct option long_options[] = {
 	{"iterations", required_argument, 0, 'i'},
 	{"size", required_argument, 0, 's'},
 	{"client", optional_argument, 0, 'c'},
+	{"unix", optional_argument, 0, 'u'},
 	{0, 0, 0, 0}
 };
 
@@ -32,7 +36,8 @@ static void usage(const char *prog)
 		"  Options:\n"
 		"  -i, --iterations	Number of requests-responses to exchange\n"
 		"  -s, --size		Size of the message in bytes\n"
-		"  -c, --client		Behave as client (default is server)\n",
+		"  -c, --client		Behave as client (default is server)\n"
+		"  -u, --unix		Use AF_UNIX sockets\n",
 		prog);
 
 	exit(1);
@@ -43,7 +48,7 @@ static void parse_command_line(int argc, char **argv)
 	int option_index, c;
 
 	for (;;) {
-		c = getopt_long(argc, argv, "i:s:c", long_options,
+		c = getopt_long(argc, argv, "i:s:cu", long_options,
 				&option_index);
 		if (c == -1)
 			break;
@@ -64,6 +69,9 @@ static void parse_command_line(int argc, char **argv)
 		case 'c':
 			opt_client = 1;
 			break;
+		case 'u':
+			opt_unix = 1;
+			break;
 		default:
 			usage(argv[0]);
 		}
@@ -83,7 +91,7 @@ int main(int argc, char *argv[])
 
 	parse_command_line(argc, argv);
 
-	s = socket(AF_INET, SOCK_STREAM, 0);
+	s = socket(opt_unix ? AF_UNIX : AF_INET, SOCK_STREAM, 0);
 	if (s < 0) {
 		fprintf(stderr, "Error creating socket: %s\n", strerror(errno));
 		return 1;
@@ -93,12 +101,24 @@ int main(int argc, char *argv[])
 	if (opt_client) {
 		printf("I'm the client\n");
 
-		struct sockaddr_in addr = {0};
-		addr.sin_family = AF_INET;
-    		addr.sin_addr.s_addr = SERVER_IP;
-    		addr.sin_port = htons(SERVER_PORT);
+		struct sockaddr *addr;
+		struct sockaddr_in addr_in = {0};
+		struct sockaddr_un addr_un = {0};
+		int len;
+		if (opt_unix) {
+			addr_un.sun_family = AF_UNIX;
+			strcpy(addr_un.sun_path, SOCKET_PATH);
+			addr = (struct sockaddr *)&addr_un;
+			len = sizeof(struct sockaddr_un);
+		} else {
+			addr_in.sin_family = AF_INET;
+			addr_in.sin_addr.s_addr = SERVER_IP;
+			addr_in.sin_port = htons(SERVER_PORT);
+			addr = (struct sockaddr *)&addr_in;
+			len = sizeof(struct sockaddr_in);
+		}
 
-		if (connect(s, (struct sockaddr *)&addr, sizeof(addr))) {
+		if (connect(s, addr, len)) {
 			fprintf(stderr, "Error connecting to server: %s\n",
 				strerror(errno));
 			goto err_close;
@@ -153,14 +173,25 @@ int main(int argc, char *argv[])
 			goto err_close;
 		}
 
-		struct sockaddr_in addr = {0};
-		addr.sin_family = AF_INET;
-    		addr.sin_addr.s_addr = INADDR_ANY; /* hotnl() */
-    		addr.sin_port = htons(SERVER_PORT);
+		struct sockaddr *addr;
+		struct sockaddr_in addr_in = {0};
+		struct sockaddr_un addr_un = {0};
+		int len;
+		if (opt_unix) {
+			addr_un.sun_family = AF_UNIX;
+			strcpy(addr_un.sun_path, SOCKET_PATH);
+			addr = (struct sockaddr *)&addr_un;
+			len = sizeof(struct sockaddr_un);
+		} else {
+			addr_in.sin_family = AF_INET;
+			addr_in.sin_addr.s_addr = INADDR_ANY; /* hotnl() */
+			addr_in.sin_port = htons(SERVER_PORT);
+			addr = (struct sockaddr *)&addr_in;
+			len = sizeof(struct sockaddr_in);
+		}
 
-		if (bind(s, (struct sockaddr *)&addr, sizeof(addr))) {
-			fprintf(stderr, "Error binding to port %d: %s\n",
-				SERVER_PORT, strerror(errno));
+		if (bind(s, addr, len)) {
+			fprintf(stderr, "Error binding: %s\n", strerror(errno));
 			goto err_close;
 		}
 		printf("Socket bound\n");
@@ -182,6 +213,8 @@ int main(int argc, char *argv[])
 		printf("Connection accepted\n");
 
 		close(s);
+		if (opt_unix)
+			unlink(SOCKET_PATH);
 		s = cs;
 		printf("Listening socket closed\n");
 

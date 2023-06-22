@@ -80,7 +80,7 @@ int main(int argc, char *argv[])
 
 	parse_command_line(argc, argv);
 
-	rc = h2os_sock_create(&s, H2OS_SOCK_CONNECTED, 0);
+	rc = h2os_sock_create(&s, H2OS_SOCK_CONNECTED, 1);
 	if (rc) {
 		fprintf(stderr, "Error creating h2os socket: %s\n",
 			strerror(-rc));
@@ -117,14 +117,16 @@ int main(int argc, char *argv[])
 			for (unsigned j = 0; j < opt_size / 8; j++)
 				msg[j] = i;
 
-			rc = h2os_sock_send(s, &desc);
+			// rc = h2os_sock_send(s, &desc);
+			while ((rc = h2os_sock_send(s, &desc)) == -EAGAIN);
 			if (rc) {
 				fprintf(stderr, "Error sending buffer %p: %s\n",
 					desc.addr, strerror(-rc));
 				goto err_put;
 			}
 
-			rc = h2os_sock_recv(s, &desc);
+			// rc = h2os_sock_recv(s, &desc);
+			while ((rc = h2os_sock_recv(s, &desc)) == -EAGAIN);
 			if (rc) {
 				fprintf(stderr, "Error receiving desc: %s\n",
 					strerror(-rc));
@@ -135,11 +137,13 @@ int main(int argc, char *argv[])
 			for (unsigned j = 0; j < opt_size / 8; j++)
 				if (msg[j] != i + 1) {
 					fprintf(stderr, "Received unexpected "
-						"message\n");
+						"message %lu\n", msg[j]);
 					goto err_put;
 				}
 
 			h2os_buffer_put(&desc);
+
+			printf("RR %lu\n", i);
 		}
 
 		unsigned long stop = ukplat_monotonic_clock();
@@ -166,7 +170,8 @@ int main(int argc, char *argv[])
 		printf("Socket listening\n");
 
 		struct h2os_sock *cs;
-		rc = h2os_sock_accept(s, &cs);
+		// rc = h2os_sock_accept(s, &cs);
+		while ((rc = h2os_sock_accept(s, &cs)) == -EAGAIN);
 		if (rc) {
 			fprintf(stderr, "Error accepting connection: %s\n",
 				strerror(-rc));
@@ -182,7 +187,8 @@ int main(int argc, char *argv[])
 		printf("Handling requests\n");
 
 		for (unsigned i = 0; i < opt_iterations; i++) {
-			rc = h2os_sock_recv(s, &desc);
+			// rc = h2os_sock_recv(s, &desc);
+			while ((rc = h2os_sock_recv(s, &desc)) == -EAGAIN);
 			if (rc) {
 				fprintf(stderr, "Error receiving desc: %s\n",
 					strerror(-rc));
@@ -190,10 +196,12 @@ int main(int argc, char *argv[])
 			}
 
 			msg = desc.addr;
+			printf("Message contains %lu\n", msg[0]);
 			for (unsigned j = 0; j < opt_size / 8; j++)
 				msg[j]++;
 
-			rc = h2os_sock_send(s, &desc);
+			// rc = h2os_sock_send(s, &desc);
+			while ((rc = h2os_sock_send(s, &desc)) == -EAGAIN);
 			if (rc) {
 				fprintf(stderr, "Error sending buffer %p: %s\n",
 					desc.addr, strerror(-rc));

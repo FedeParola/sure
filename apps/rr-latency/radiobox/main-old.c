@@ -1,17 +1,14 @@
-#include <arpa/inet.h>
-#include <errno.h>
 #include <getopt.h>
-#include <netinet/in.h>
+#include <h2os/net.h>
+#include <h2os/shm.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/socket.h>
 #include <uk/plat/time.h>
-#include <unistd.h>
 
-#define SERVER_IP 0x0100000a /* Already in nbo */
+#define SERVER_VM_ID 0
 #define SERVER_PORT 5000
-#define MAX_MSG_SIZE 4096
+#define CLIENT_VM_ID 1
 
 static unsigned opt_iterations = 0;
 static unsigned opt_size = 0;
@@ -28,7 +25,7 @@ static void usage(const char *prog)
 	fprintf(stderr,
 		"  Usage: %s [OPTIONS]\n"
 		"  Options:\n"
-		"  -i, --iterations	Number of requests-responses to exchange\n"
+	      	"  -i, --iterations	Number of requests-responses to exchange\n"
 		"  -s, --size		Size of the message in bytes\n"
 		"  -c, --client		Behave as client (default is server)\n",
 		prog);
@@ -76,14 +73,17 @@ static void parse_command_line(int argc, char **argv)
 
 int main(int argc, char *argv[])
 {
-	int s;
-	unsigned long msg[MAX_MSG_SIZE / sizeof(unsigned long)];
+	int rc;
+	struct h2os_sock *s;
+	struct h2os_shm_desc desc;
+	unsigned long *msg;
 
 	parse_command_line(argc, argv);
 
-	s = socket(AF_INET, SOCK_STREAM, 0);
-	if (s < 0) {
-		fprintf(stderr, "Error creating socket: %s\n", strerror(errno));
+	rc = h2os_sock_create(&s, H2OS_SOCK_CONNECTED, 0);
+	if (rc) {
+		fprintf(stderr, "Error creating h2os socket: %s\n",
+			strerror(-rc));
 		return 1;
 	}
 	printf("Socket created\n");
@@ -91,14 +91,10 @@ int main(int argc, char *argv[])
 	if (opt_client) {
 		printf("I'm the client\n");
 
-		struct sockaddr_in addr = {0};
-		addr.sin_family = AF_INET;
-    		addr.sin_addr.s_addr = SERVER_IP;
-    		addr.sin_port = htons(SERVER_PORT);
-
-		if (connect(s, (struct sockaddr *)&addr, sizeof(addr))) {
+		rc = h2os_sock_connect(s, SERVER_VM_ID, SERVER_PORT);
+		if (rc) {
 			fprintf(stderr, "Error connecting to server: %s\n",
-				strerror(errno));
+				strerror(-rc));
 			goto err_close;
 		}
 		printf("Socket connected\n");
@@ -109,27 +105,41 @@ int main(int argc, char *argv[])
 		unsigned long start = ukplat_monotonic_clock();
 
 		for (unsigned long i = 0; i < opt_iterations; i++) {
+			rc = h2os_buffer_get(&desc); 
+			if (rc) {
+				fprintf(stderr,
+					"Error getting shm buffer: %s\n",
+					strerror(-rc));
+				goto err_close;
+			}
+
+			msg = desc.addr;
 			for (unsigned j = 0; j < opt_size / 8; j++)
 				msg[j] = i;
 
-			if (send(s, msg, opt_size, 0) != opt_size) {
-				fprintf(stderr, "Error sending message: %s\n",
-					strerror(errno));
+			rc = h2os_sock_send(s, &desc);
+			if (rc) {
+				fprintf(stderr, "Error sending buffer %p: %s\n",
+					desc.addr, strerror(-rc));
+				goto err_put;
+			}
+
+			rc = h2os_sock_recv(s, &desc);
+			if (rc) {
+				fprintf(stderr, "Error receiving desc: %s\n",
+					strerror(-rc));
 				goto err_close;
 			}
 
-			if (recv(s, msg, opt_size, 0) != opt_size) {
-				fprintf(stderr, "Error receiving message: %s\n",
-					strerror(errno));
-				goto err_close;
-			}
-
+			msg = desc.addr;
 			for (unsigned j = 0; j < opt_size / 8; j++)
 				if (msg[j] != i + 1) {
 					fprintf(stderr, "Received unexpected "
-						"message\n");
-					goto err_close;
+						"message %lu\n", msg[j]);
+					goto err_put;
 				}
+
+			h2os_buffer_put(&desc);
 		}
 
 		unsigned long stop = ukplat_monotonic_clock();
@@ -140,66 +150,68 @@ int main(int argc, char *argv[])
 	} else {
 		printf("I'm the server\n");
 
-		struct sockaddr_in addr = {0};
-		addr.sin_family = AF_INET;
-    		addr.sin_addr.s_addr = INADDR_ANY; /* hotnl() */
-    		addr.sin_port = htons(SERVER_PORT);
-
-		if (bind(s, (struct sockaddr *)&addr, sizeof(addr))) {
+		rc = h2os_sock_bind(s, SERVER_PORT);
+		if (rc) {
 			fprintf(stderr, "Error binding to port %d: %s\n",
-				SERVER_PORT, strerror(errno));
+				SERVER_PORT, strerror(-rc));
 			goto err_close;
 		}
 		printf("Socket bound\n");
 
-		if (listen(s, 8)) {
-			fprintf(stderr, "Error listening: %s\n",
-				strerror(errno));
+		rc = h2os_sock_listen(s);
+		if (rc) {
+			fprintf(stderr, "Error listening: %s\n", strerror(-rc));
 			goto err_close;
 		}
 		printf("Socket listening\n");
 
-		int cs;
-		cs = accept(s, NULL, 0);
-		if (cs < 0) {
+		struct h2os_sock *cs;
+		rc = h2os_sock_accept(s, &cs);
+		if (rc) {
 			fprintf(stderr, "Error accepting connection: %s\n",
-				strerror(errno));
+				strerror(-rc));
 			goto err_close;
 		}
 		printf("Connection accepted\n");
 
-		close(s);
-		s = cs;
+		h2os_sock_close(s);
 		printf("Listening socket closed\n");
+
+		s = cs;
 
 		printf("Handling requests\n");
 
 		for (unsigned i = 0; i < opt_iterations; i++) {
-			if (recv(s, msg, opt_size, 0) != opt_size) {
-				fprintf(stderr, "Error receiving message: %s\n",
-					strerror(errno));
+			rc = h2os_sock_recv(s, &desc);
+			if (rc) {
+				fprintf(stderr, "Error receiving desc: %s\n",
+					strerror(-rc));
 				goto err_close;
 			}
 
+			msg = desc.addr;
 			for (unsigned j = 0; j < opt_size / 8; j++)
 				msg[j]++;
 
-			if (send(s, msg, opt_size, 0) != opt_size) {
-				fprintf(stderr, "Error sending message: %s\n",
-					strerror(errno));
-				goto err_close;
+			rc = h2os_sock_send(s, &desc);
+			if (rc) {
+				fprintf(stderr, "Error sending buffer %p: %s\n",
+					desc.addr, strerror(-rc));
+				goto err_put;
 			}
 		}
 
 		printf("Test terminated\n");
 	}
 
-	close(s);
+	h2os_sock_close(s);
 	printf("Socket closed\n");
 
 	return 0;
 
+err_put:
+	h2os_buffer_put(&desc);
 err_close:
-	close(s);
+	h2os_sock_close(s);
 	return 1;
 }

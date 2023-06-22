@@ -30,7 +30,7 @@ static void usage(const char *prog)
 	fprintf(stderr,
 		"  Usage: %s [OPTIONS]\n"
 		"  Options:\n"
-	      	"  -i, --iterations	Number of requests-responses to exchange\n"
+		"  -i, --iterations	Number of requests-responses to exchange\n"
 		"  -s, --size		Size of the message in bytes\n"
 		"  -c, --client		Behave as client (default is server)\n",
 		prog);

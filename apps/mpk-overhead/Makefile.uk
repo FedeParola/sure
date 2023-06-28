@@ -1,0 +1,3 @@
+$(eval $(call addlib,appmpkoverhead))
+
+APPMPKOVERHEAD_SRCS-y += $(APPMPKOVERHEAD_BASE)/main.c

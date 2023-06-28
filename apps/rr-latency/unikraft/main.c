@@ -9,7 +9,7 @@
 #include <uk/plat/time.h>
 #include <unistd.h>
 
-#define SERVER_IP 0x0100000a /* Already in nbo */
+#define SERVER_IP 0x0100000a /* 10.0.0.1, already in nbo */
 #define SERVER_PORT 5000
 #define MAX_MSG_SIZE 4096
 

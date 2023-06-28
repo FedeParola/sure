@@ -4,7 +4,7 @@ eval qemu-system-x86_64 \
 	-nographic \
 	-vga none \
 	-net none \
-	-kernel ./build/rr-latency-unikraft_qemu-x86_64 \
+	-kernel ./build/unikraft_qemu-x86_64 \
 	-enable-kvm \
 	-cpu host \
 	-netdev tap,id=tap0,script=qemu-ifup.sh,downscript=no,vhost=on \

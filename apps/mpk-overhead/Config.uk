@@ -2,4 +2,4 @@
 config APPMPKOVERHEAD_DEPENDENCIES
 	bool
 	default y
-	select LIBH2OS
+	select LIBUNIMSG

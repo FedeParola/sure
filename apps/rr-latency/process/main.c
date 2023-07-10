@@ -203,7 +203,7 @@ static void client(int s)
 	unsigned long elapsed = (stop.tv_sec - start.tv_sec) * 1000000000
 				+ stop.tv_nsec - start.tv_nsec;
 
-	printf("Total time: %lu ns, average rr latency: %lu ns\n", elapsed,
+	printf("total-time=%lu\nrr-latency=%lu\n", elapsed,
 	       elapsed / opt_iterations);
 
 	close(s);

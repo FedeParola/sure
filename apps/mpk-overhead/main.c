@@ -1,6 +1,6 @@
 #include <getopt.h>
-#include <h2os/net.h>
-#include <h2os/shm.h>
+#include <unimsg/net.h>
+#include <unimsg/shm.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -64,7 +64,7 @@ static void parse_command_line(int argc, char **argv)
 
 // 	uk_preempt_disable();
 
-// 	// unsigned long tid = CONFIG_LIBH2OS_MAX_THREADS;
+// 	// unsigned long tid = CONFIG_LIBUNIMSG_MAX_THREADS;
 // 	struct uk_thread *_t = uk_thread_current();
 // 	if (!_t)
 // 		UK_CRASH("No thread");
@@ -121,9 +121,9 @@ static void parse_command_line(int argc, char **argv)
 // 		: [rc]"=&r"(rc),
 // 		  //[tid]"+r"(tid)
 // 		  [stack]"+r"(stackp)
-// 		: [pkey]"i"(H2OS_PKRU_PRIVILEGED),
-// 		  [dkey]"i"(H2OS_PKRU_DEFAULT),
-// 		  [maxtid]"i"(CONFIG_LIBH2OS_MAX_THREADS),
+// 		: [pkey]"i"(UNIMSG_PKRU_PRIVILEGED),
+// 		  [dkey]"i"(UNIMSG_PKRU_DEFAULT),
+// 		  [maxtid]"i"(CONFIG_LIBUNIMSG_MAX_THREADS),
 // 		  [tinfo]"m"(thread_infos)
 // 		: "rax", "rdi", "rsi", "rdx", "rcx", "r8", "r9", "r10", "r11",
 // 		  "r12"
@@ -141,7 +141,7 @@ int main(int argc, char *argv[])
 	unsigned long start = ukplat_monotonic_clock();
 
 	for (unsigned long i = 0; i < opt_iterations; i++)
-		h2os_dummy();
+		unimsg_dummy();
 
 	unsigned long stop = ukplat_monotonic_clock();
 

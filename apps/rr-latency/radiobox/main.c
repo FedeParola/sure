@@ -1,6 +1,6 @@
 #include <getopt.h>
-#include <h2os/net.h>
-#include <h2os/shm.h>
+#include <unimsg/net.h>
+#include <unimsg/shm.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -9,8 +9,8 @@
 #define SERVER_VM_ID 0
 #define SERVER_PORT 5000
 #define CLIENT_VM_ID 1
-#define ERR_CLOSE(s) ({ h2os_sock_close(s); exit(1); })
-#define ERR_PUT(desc, s) ({ h2os_buffer_put(&(desc)); ERR_CLOSE(s); })
+#define ERR_CLOSE(s) ({ unimsg_sock_close(s); exit(1); })
+#define ERR_PUT(desc, s) ({ unimsg_buffer_put(&(desc)); ERR_CLOSE(s); })
 
 static unsigned opt_iterations = 0;
 static unsigned opt_size = 0;
@@ -79,15 +79,15 @@ static void parse_command_line(int argc, char **argv)
 	}
 }
 
-static void client(struct h2os_sock *s)
+static void client(struct unimsg_sock *s)
 {
 	int rc;
-	struct h2os_shm_desc desc;
+	struct unimsg_shm_desc desc;
 	unsigned long *msg;
 
 	printf("I'm the client\n");
 
-	rc = h2os_sock_connect(s, SERVER_VM_ID, SERVER_PORT);
+	rc = unimsg_sock_connect(s, SERVER_VM_ID, SERVER_PORT);
 	if (rc) {
 		fprintf(stderr, "Error connecting to server: %s\n",
 			strerror(-rc));
@@ -100,7 +100,7 @@ static void client(struct h2os_sock *s)
 	unsigned long start = ukplat_monotonic_clock();
 
 	for (unsigned long i = 0; i < opt_iterations; i++) {
-		rc = h2os_buffer_get(&desc); 
+		rc = unimsg_buffer_get(&desc); 
 		if (rc) {
 			fprintf(stderr, "Error getting shm buffer: %s\n",
 				strerror(-rc));
@@ -112,9 +112,9 @@ static void client(struct h2os_sock *s)
 			msg[j] = i;
 
 		if (opt_busy_poll)
-			while ((rc = h2os_sock_send(s, &desc)) == -EAGAIN);
+			while ((rc = unimsg_sock_send(s, &desc)) == -EAGAIN);
 		else
-			rc = h2os_sock_send(s, &desc);
+			rc = unimsg_sock_send(s, &desc);
 		if (rc) {
 			fprintf(stderr, "Error sending buffer %p: %s\n",
 				desc.addr, strerror(-rc));
@@ -122,9 +122,9 @@ static void client(struct h2os_sock *s)
 		}
 
 		if (opt_busy_poll)
-			while ((rc = h2os_sock_recv(s, &desc)) == -EAGAIN);
+			while ((rc = unimsg_sock_recv(s, &desc)) == -EAGAIN);
 		else
-			rc = h2os_sock_recv(s, &desc);
+			rc = unimsg_sock_recv(s, &desc);
 		if (rc) {
 			fprintf(stderr, "Error receiving desc: %s\n",
 				strerror(-rc));
@@ -139,27 +139,27 @@ static void client(struct h2os_sock *s)
 				ERR_PUT(desc, s);
 			}
 
-		h2os_buffer_put(&desc);
+		unimsg_buffer_put(&desc);
 	}
 
 	unsigned long stop = ukplat_monotonic_clock();
 
-	printf("Total time: %lu ns, average rr latency: %lu ns\n",
-		stop - start, (stop - start) / opt_iterations);
+	printf("total-time=%lu\nrr-latency=%lu\n", stop - start,
+	       (stop - start) / opt_iterations);
 
-	h2os_sock_close(s);
+	unimsg_sock_close(s);
 	printf("Socket closed\n");
 }
 
-static void server(struct h2os_sock *s)
+static void server(struct unimsg_sock *s)
 {
 	int rc;
-	struct h2os_shm_desc desc;
+	struct unimsg_shm_desc desc;
 	unsigned long *msg;
 
 	printf("I'm the server\n");
 
-	rc = h2os_sock_bind(s, SERVER_PORT);
+	rc = unimsg_sock_bind(s, SERVER_PORT);
 	if (rc) {
 		fprintf(stderr, "Error binding to port %d: %s\n", SERVER_PORT,
 			strerror(-rc));
@@ -167,18 +167,18 @@ static void server(struct h2os_sock *s)
 	}
 	printf("Socket bound\n");
 
-	rc = h2os_sock_listen(s);
+	rc = unimsg_sock_listen(s);
 	if (rc) {
 		fprintf(stderr, "Error listening: %s\n", strerror(-rc));
 		ERR_CLOSE(s);
 	}
 	printf("Socket listening\n");
 
-	struct h2os_sock *cs;
+	struct unimsg_sock *cs;
 	if (opt_busy_poll)
-		while ((rc = h2os_sock_accept(s, &cs)) == -EAGAIN);
+		while ((rc = unimsg_sock_accept(s, &cs)) == -EAGAIN);
 	else
-		rc = h2os_sock_accept(s, &cs);
+		rc = unimsg_sock_accept(s, &cs);
 	if (rc) {
 		fprintf(stderr, "Error accepting connection: %s\n",
 			strerror(-rc));
@@ -186,7 +186,7 @@ static void server(struct h2os_sock *s)
 	}
 	printf("Connection accepted\n");
 
-	h2os_sock_close(s);
+	unimsg_sock_close(s);
 	printf("Listening socket closed\n");
 
 	s = cs;
@@ -195,9 +195,9 @@ static void server(struct h2os_sock *s)
 
 	for (unsigned i = 0; i < opt_iterations; i++) {
 		if (opt_busy_poll)
-			while ((rc = h2os_sock_recv(s, &desc)) == -EAGAIN);
+			while ((rc = unimsg_sock_recv(s, &desc)) == -EAGAIN);
 		else
-			rc = h2os_sock_recv(s, &desc);
+			rc = unimsg_sock_recv(s, &desc);
 		if (rc) {
 			fprintf(stderr, "Error receiving desc: %s\n",
 				strerror(-rc));
@@ -209,9 +209,9 @@ static void server(struct h2os_sock *s)
 			msg[j]++;
 
 		if (opt_busy_poll)
-			while ((rc = h2os_sock_send(s, &desc)) == -EAGAIN);
+			while ((rc = unimsg_sock_send(s, &desc)) == -EAGAIN);
 		else
-			rc = h2os_sock_send(s, &desc);
+			rc = unimsg_sock_send(s, &desc);
 		if (rc) {
 			fprintf(stderr, "Error sending buffer %p: %s\n",
 				desc.addr, strerror(-rc));
@@ -221,20 +221,20 @@ static void server(struct h2os_sock *s)
 
 	printf("Test terminated\n");
 
-	h2os_sock_close(s);
+	unimsg_sock_close(s);
 	printf("Socket closed\n");
 }
 
 int main(int argc, char *argv[])
 {
 	int rc;
-	struct h2os_sock *s;
+	struct unimsg_sock *s;
 
 	parse_command_line(argc, argv);
 
-	rc = h2os_sock_create(&s, H2OS_SOCK_CONNECTED, opt_busy_poll);
+	rc = unimsg_sock_create(&s, UNIMSG_SOCK_CONNECTED, opt_busy_poll);
 	if (rc) {
-		fprintf(stderr, "Error creating h2os socket: %s\n",
+		fprintf(stderr, "Error creating unimsg socket: %s\n",
 			strerror(-rc));
 		return 1;
 	}

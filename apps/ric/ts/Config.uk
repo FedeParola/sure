@@ -1,0 +1,8 @@
+### Invisible option for dependencies
+config APPRC_DEPENDENCIES
+	bool
+	default y
+	select LIBUNIMSG
+	select LIBCXX
+	select LIBCOMPILER_RT
+	select LIBMUSL

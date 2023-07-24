@@ -1,0 +1,3 @@
+$(eval $(call addlib,apprc))
+
+APPRC_SRCS-y += $(APPRC_BASE)/rc_xapp.c

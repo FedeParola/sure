@@ -1,0 +1,3 @@
+$(eval $(call addlib,appqp))
+
+APPQP_SRCS-y += $(APPQP_BASE)/qp_xapp.cpp

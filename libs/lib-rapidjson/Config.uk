@@ -1,0 +1,5 @@
+menuconfig LIBRAPIDJSON
+    bool "rapidjson - A fast JSON parser/generator for C++"
+	select LIBNOLIBC if !HAVE_LIBC
+	select LIBCXXABI
+    default n

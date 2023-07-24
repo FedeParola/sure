@@ -1,0 +1,4 @@
+$(eval $(call addlib,appts))
+
+APPTS_SRCS-y += $(APPTS_BASE)/ts_xapp.cpp
+# APPTS_SRCS-y += $(APPTS_BASE)/restclient.cpp

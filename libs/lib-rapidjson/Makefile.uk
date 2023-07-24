@@ -1,0 +1,22 @@
+################################################################################
+# Library registration
+################################################################################
+$(eval $(call addlib_s,librapidjson,$(CONFIG_LIBRAPIDJSON)))
+
+################################################################################
+# Sources
+################################################################################
+LIBRAPIDJSON_VERSION=1.1.0
+LIBRAPIDJSON_URL=https://github.com/Tencent/rapidjson/archive/refs/tags/v1.1.0.zip
+$(eval $(call fetch,librapidjson,$(LIBRAPIDJSON_URL)))
+
+################################################################################
+# Helpers
+################################################################################
+LIBRAPIDJSON_SRC=$(LIBRAPIDJSON_ORIGIN)/rapidjson-$(LIBRAPIDJSON_VERSION)
+
+################################################################################
+# Library includes
+################################################################################
+CINCLUDES-$(CONFIG_LIBRAPIDJSON) += -I$(LIBRAPIDJSON_SRC)/include
+CXXINCLUDES-$(CONFIG_LIBRAPIDJSON) += -I$(LIBRAPIDJSON_SRC)/include

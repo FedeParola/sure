@@ -7,3 +7,18 @@
 [submodule "libs/lib-lwip"]
 	path = libs/lib-lwip
 	url = https://github.com/unikraft/lib-lwip.git
+[submodule "libs/lib-compiler-rt"]
+	path = libs/lib-compiler-rt
+	url = https://github.com/unikraft/lib-compiler-rt.git
+[submodule "libs/lib-libcxx"]
+	path = libs/lib-libcxx
+	url = https://github.com/unikraft/lib-libcxx.git
+[submodule "libs/lib-libcxxabi"]
+	path = libs/lib-libcxxabi
+	url = https://github.com/unikraft/lib-libcxxabi.git
+[submodule "libs/lib-libunwind"]
+	path = libs/lib-libunwind
+	url = https://github.com/unikraft/lib-libunwind.git
+[submodule "libs/lib-musl"]
+	path = libs/lib-musl
+	url = https://github.com/unikraft/lib-musl

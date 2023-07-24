@@ -1,0 +1,3 @@
+$(eval $(call addlib,appad))
+
+APPAD_SRCS-y += $(APPAD_BASE)/ad_xapp.cpp

@@ -30,6 +30,8 @@ static int opt_client = 0;
 static int opt_unix = 0;
 static int opt_sk_msg = 0;
 static int opt_server_addr = SERVER_ADDR;
+static unsigned opt_warmup = 0;
+static unsigned opt_delay = 0;
 static struct option long_options[] = {
 	{"iterations", required_argument, 0, 'i'},
 	{"size", required_argument, 0, 's'},
@@ -37,6 +39,8 @@ static struct option long_options[] = {
 	{"unix", optional_argument, 0, 'u'},
 	{"sk-msg", optional_argument, 0, 'm'},
 	{"localhost", optional_argument, 0, 'l'},
+	{"warmup", optional_argument, 0, 'w'},
+	{"delay", optional_argument, 0, 'd'},
 	{0, 0, 0, 0}
 };
 
@@ -50,7 +54,9 @@ static void usage(const char *prog)
 		"  -c, --client		Behave as client (default is server)\n"
 		"  -u, --unix		Use AF_UNIX sockets\n"
 		"  -m, --sk-msg		Use SK_MSG acceleration (TCP socket only)\n"
-		"  -l, --localhost	Run test on localhost\n",
+		"  -l, --localhost	Run test on localhost\n"
+		"  -w, --warmup		Number of warmup iterations\n"
+		"  -d, --delay		Delay between consecutive requests in ms (default 0)\n",
 		prog);
 
 	exit(1);
@@ -61,7 +67,7 @@ static void parse_command_line(int argc, char **argv)
 	int option_index, c;
 
 	for (;;) {
-		c = getopt_long(argc, argv, "i:s:cuml", long_options,
+		c = getopt_long(argc, argv, "i:s:cumlw:d:", long_options,
 				&option_index);
 		if (c == -1)
 			break;
@@ -91,6 +97,12 @@ static void parse_command_line(int argc, char **argv)
 		case 'l':
 			opt_server_addr = LOCALHOST;
 			break;
+		case 'w':
+			opt_warmup = atoi(optarg);
+			break;
+		case 'd':
+			opt_delay = atoi(optarg);
+			break;
 		default:
 			usage(argv[0]);
 		}
@@ -109,10 +121,33 @@ static void parse_command_line(int argc, char **argv)
 	}
 }
 
-static void client(int s)
+static void do_client_rr(int s, unsigned long val)
 {
 	unsigned long msg[MAX_MSG_SIZE / sizeof(unsigned long)];
 
+	for (unsigned j = 0; j < opt_size / 8; j++)
+		msg[j] = val;
+
+	if (send(s, msg, opt_size, 0) != opt_size) {
+		fprintf(stderr, "Error sending message: %s\n", strerror(errno));
+		ERR_CLOSE(s);
+	}
+
+	if (recv(s, msg, opt_size, 0) != opt_size) {
+		fprintf(stderr, "Error receiving message: %s\n",
+			strerror(errno));
+		ERR_CLOSE(s);
+	}
+
+	for (unsigned j = 0; j < opt_size / 8; j++)
+		if (msg[j] != val + 1) {
+			fprintf(stderr, "Received unexpected message\n");
+			ERR_CLOSE(s);
+		}
+}
+
+static void client(int s)
+{
 	printf("I'm the client\n");
 
 	struct sockaddr *addr;
@@ -167,52 +202,77 @@ static void client(int s)
 		}
 
 		printf("Socket added to sockmap\n");
+
+		sleep(1); /* Make sure server added his entry in the sockmap */
 	}
 
-	printf("Sending %u requests of %u bytes\n", opt_iterations, opt_size);
+	if (opt_warmup) {
+		printf("Performing %u warmup RRs...\n", opt_warmup);
+		for (unsigned long i = 0; i < opt_warmup; i++)
+			do_client_rr(s, i);
+	}
 
-	struct timespec start;
-	clock_gettime(CLOCK_MONOTONIC, &start);
+	printf("Sending %u requests of %u bytes with %u ms of delay\n",
+	       opt_iterations, opt_size, opt_delay);
+
+
+	unsigned long total = 0, latency;
+	struct timespec start = {0}, stop;
+
+	if (!opt_delay)
+		clock_gettime(CLOCK_MONOTONIC, &start);
 
 	for (unsigned long i = 0; i < opt_iterations; i++) {
-		for (unsigned j = 0; j < opt_size / 8; j++)
-			msg[j] = i;
-
-		if (send(s, msg, opt_size, 0) != opt_size) {
-			fprintf(stderr, "Error sending message: %s\n",
-				strerror(errno));
-			ERR_CLOSE(s);
+		if (opt_delay) {
+			usleep(opt_delay * 1000);
+			clock_gettime(CLOCK_MONOTONIC, &start);
 		}
 
-		if (recv(s, msg, opt_size, 0) != opt_size) {
-			fprintf(stderr, "Error receiving message: %s\n",
-				strerror(errno));
-			ERR_CLOSE(s);
-		}
+		do_client_rr(s, i);
 
-		for (unsigned j = 0; j < opt_size / 8; j++)
-			if (msg[j] != i + 1) {
-				fprintf(stderr, "Received unexpected "
-					"message\n");
-				ERR_CLOSE(s);
-			}
+		if (opt_delay) {
+			clock_gettime(CLOCK_MONOTONIC, &stop);
+			latency = (stop.tv_sec - start.tv_sec) * 1000000000
+				  + stop.tv_nsec - start.tv_nsec;
+			total += latency;
+			printf("%lu=%lu\n", i, latency);
+		}
 	}
 
-	struct timespec stop;
-	clock_gettime(CLOCK_MONOTONIC, &stop);
-	unsigned long elapsed = (stop.tv_sec - start.tv_sec) * 1000000000
-				+ stop.tv_nsec - start.tv_nsec;
+	if (!opt_delay) {
+		clock_gettime(CLOCK_MONOTONIC, &stop);
+		total = (stop.tv_sec - start.tv_sec) * 1000000000
+			+ stop.tv_nsec - start.tv_nsec;
+	}
 
-	printf("total-time=%lu\nrr-latency=%lu\n", elapsed,
-	       elapsed / opt_iterations);
+	printf("total-time=%lu\nrr-latency=%lu\n", total,
+	       total / opt_iterations);
 
 	close(s);
 	printf("Socket closed\n");
 }
 
-static void server(int s, char *path)
+static void do_server_rr(int s)
 {
 	unsigned long msg[MAX_MSG_SIZE / sizeof(unsigned long)];
+
+	if (recv(s, msg, opt_size, 0) != opt_size) {
+		fprintf(stderr, "Error receiving message: %s\n",
+			strerror(errno));
+		ERR_UNPIN(s);
+	}
+
+	for (unsigned j = 0; j < opt_size / 8; j++)
+		msg[j]++;
+
+	if (send(s, msg, opt_size, 0) != opt_size) {
+		fprintf(stderr, "Error sending message: %s\n", strerror(errno));
+		ERR_UNPIN(s);
+	}
+}
+
+static void server(int s, char *path)
+{
 	struct bpf_object *bpf_prog;
 	int bpf_prog_fd, sockmap_fd;
 
@@ -323,24 +383,16 @@ static void server(int s, char *path)
 		printf("Socket added to sockmap\n");
 	}
 
-	printf("Handling requests\n");
-
-	for (unsigned i = 0; i < opt_iterations; i++) {
-		if (recv(s, msg, opt_size, 0) != opt_size) {
-			fprintf(stderr, "Error receiving message: %s\n",
-				strerror(errno));
-			ERR_UNPIN(s);
-		}
-
-		for (unsigned j = 0; j < opt_size / 8; j++)
-			msg[j]++;
-
-		if (send(s, msg, opt_size, 0) != opt_size) {
-			fprintf(stderr, "Error sending message: %s\n",
-				strerror(errno));
-			ERR_UNPIN(s);
-		}
+	if (opt_warmup) {
+		printf("Performing %u warmup RRs...\n", opt_warmup);
+		for (unsigned long i = 0; i < opt_warmup; i++)
+			do_server_rr(s);
 	}
+
+	printf("Handling requests\n");
+	
+	for (unsigned i = 0; i < opt_iterations; i++)
+			do_server_rr(s);
 
 	printf("Test terminated\n");
 

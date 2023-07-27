@@ -1,6 +1,5 @@
 #include <getopt.h>
 #include <unimsg/net.h>
-#include <unimsg/shm.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -16,13 +15,19 @@ static unsigned opt_iterations = 0;
 static unsigned opt_size = 0;
 static int opt_client = 0;
 static int opt_busy_poll = 0;
+static unsigned opt_warmup = 0;
+static unsigned opt_delay = 0;
 static struct option long_options[] = {
 	{"iterations", required_argument, 0, 'i'},
 	{"size", required_argument, 0, 's'},
 	{"client", optional_argument, 0, 'c'},
 	{"busy-poll", optional_argument, 0, 'b'},
+	{"warmup", optional_argument, 0, 'w'},
+	{"delay", optional_argument, 0, 'd'},
 	{0, 0, 0, 0}
 };
+
+int usleep(unsigned usec);
 
 static void usage(const char *prog)
 {
@@ -32,7 +37,9 @@ static void usage(const char *prog)
 		"  -i, --iterations	Number of requests-responses to exchange\n"
 		"  -s, --size		Size of the message in bytes\n"
 		"  -c, --client		Behave as client (default is server)\n"
-		"  -b, --busy-poll	Use busy polling (non-blocking sockets)\n",
+		"  -b, --busy-poll	Use busy polling (non-blocking sockets)\n"
+		"  -w, --warmup		Number of warmup iterations\n"
+		"  -d, --delay		Delay between consecutive requests in ms (default 0)\n",
 		prog);
 
 	exit(1);
@@ -43,7 +50,7 @@ static void parse_command_line(int argc, char **argv)
 	int option_index, c;
 
 	for (;;) {
-		c = getopt_long(argc, argv, "i:s:cb", long_options,
+		c = getopt_long(argc, argv, "i:s:cbw:d:", long_options,
 				&option_index);
 		if (c == -1)
 			break;
@@ -67,6 +74,12 @@ static void parse_command_line(int argc, char **argv)
 		case 'b':
 			opt_busy_poll = 1;
 			break;
+		case 'w':
+			opt_warmup = atoi(optarg);
+			break;
+		case 'd':
+			opt_delay = atoi(optarg);
+			break;
 		default:
 			usage(argv[0]);
 		}
@@ -79,11 +92,56 @@ static void parse_command_line(int argc, char **argv)
 	}
 }
 
-static void client(struct unimsg_sock *s)
+static void do_client_rr(struct unimsg_sock *s, unsigned long val)
 {
 	int rc;
 	struct unimsg_shm_desc desc;
 	unsigned long *msg;
+
+	rc = unimsg_buffer_get(&desc); 
+	if (rc) {
+		fprintf(stderr, "Error getting shm buffer: %s\n",
+			strerror(-rc));
+		ERR_CLOSE(s);
+	}
+
+	msg = desc.addr;
+	for (unsigned j = 0; j < opt_size / 8; j++)
+		msg[j] = val;
+
+	if (opt_busy_poll)
+		while ((rc = unimsg_sock_send(s, &desc)) == -EAGAIN);
+	else
+		rc = unimsg_sock_send(s, &desc);
+	if (rc) {
+		fprintf(stderr, "Error sending buffer %p: %s\n", desc.addr,
+			strerror(-rc));
+		ERR_PUT(desc, s);
+	}
+
+	if (opt_busy_poll)
+		while ((rc = unimsg_sock_recv(s, &desc)) == -EAGAIN);
+	else
+		rc = unimsg_sock_recv(s, &desc);
+	if (rc) {
+		fprintf(stderr, "Error receiving desc: %s\n", strerror(-rc));
+		ERR_CLOSE(s);
+	}
+
+	msg = desc.addr;
+	for (unsigned j = 0; j < opt_size / 8; j++)
+		if (msg[j] != val + 1) {
+			fprintf(stderr, "Received unexpected message %lu\n",
+				msg[j]);
+			ERR_PUT(desc, s);
+		}
+
+	unimsg_buffer_put(&desc);
+}
+
+static void client(struct unimsg_sock *s)
+{
+	int rc;
 
 	printf("I'm the client\n");
 
@@ -95,67 +153,79 @@ static void client(struct unimsg_sock *s)
 	}
 	printf("Socket connected\n");
 
-	printf("Sending %u requests of %u bytes\n", opt_iterations, opt_size);
-
-	unsigned long start = ukplat_monotonic_clock();
-
-	for (unsigned long i = 0; i < opt_iterations; i++) {
-		rc = unimsg_buffer_get(&desc); 
-		if (rc) {
-			fprintf(stderr, "Error getting shm buffer: %s\n",
-				strerror(-rc));
-			ERR_CLOSE(s);
-		}
-
-		msg = desc.addr;
-		for (unsigned j = 0; j < opt_size / 8; j++)
-			msg[j] = i;
-
-		if (opt_busy_poll)
-			while ((rc = unimsg_sock_send(s, &desc)) == -EAGAIN);
-		else
-			rc = unimsg_sock_send(s, &desc);
-		if (rc) {
-			fprintf(stderr, "Error sending buffer %p: %s\n",
-				desc.addr, strerror(-rc));
-			ERR_PUT(desc, s);
-		}
-
-		if (opt_busy_poll)
-			while ((rc = unimsg_sock_recv(s, &desc)) == -EAGAIN);
-		else
-			rc = unimsg_sock_recv(s, &desc);
-		if (rc) {
-			fprintf(stderr, "Error receiving desc: %s\n",
-				strerror(-rc));
-			ERR_CLOSE(s);
-		}
-
-		msg = desc.addr;
-		for (unsigned j = 0; j < opt_size / 8; j++)
-			if (msg[j] != i + 1) {
-				fprintf(stderr, "Received unexpected message "
-					"%lu\n", msg[j]);
-				ERR_PUT(desc, s);
-			}
-
-		unimsg_buffer_put(&desc);
+	if (opt_warmup) {
+		printf("Performing %u warmup RRs...\n", opt_warmup);
+		for (unsigned long i = 0; i < opt_warmup; i++)
+			do_client_rr(s, i);
 	}
 
-	unsigned long stop = ukplat_monotonic_clock();
+	printf("Sending %u requests of %u bytes with %u ms of delay\n",
+	       opt_iterations, opt_size, opt_delay);
 
-	printf("total-time=%lu\nrr-latency=%lu\n", stop - start,
-	       (stop - start) / opt_iterations);
+	unsigned long start = 0, total = 0, latency;
+
+	if (!opt_delay)
+		start = ukplat_monotonic_clock();
+
+	for (unsigned long i = 0; i < opt_iterations; i++) {
+		if (opt_delay) {
+			usleep(opt_delay * 1000);
+			start = ukplat_monotonic_clock();
+		}
+
+		do_client_rr(s, i);
+
+		if (opt_delay) {
+			latency = ukplat_monotonic_clock() - start;
+			total += latency;
+			printf("%lu=%lu\n", i, latency);
+		}
+	}
+
+	if (!opt_delay)
+		total = ukplat_monotonic_clock() - start;
+
+	printf("total-time=%lu\nrr-latency=%lu\n", total,
+	       total / opt_iterations);
 
 	unimsg_sock_close(s);
 	printf("Socket closed\n");
 }
 
-static void server(struct unimsg_sock *s)
+static void do_server_rr(struct unimsg_sock *s)
 {
 	int rc;
 	struct unimsg_shm_desc desc;
 	unsigned long *msg;
+
+	if (opt_busy_poll)
+		while ((rc = unimsg_sock_recv(s, &desc)) == -EAGAIN);
+	else
+		rc = unimsg_sock_recv(s, &desc);
+	if (rc) {
+		fprintf(stderr, "Error receiving desc: %s\n",
+			strerror(-rc));
+		ERR_CLOSE(s);
+	}
+
+	msg = desc.addr;
+	for (unsigned j = 0; j < opt_size / 8; j++)
+		msg[j]++;
+
+	if (opt_busy_poll)
+		while ((rc = unimsg_sock_send(s, &desc)) == -EAGAIN);
+	else
+		rc = unimsg_sock_send(s, &desc);
+	if (rc) {
+		fprintf(stderr, "Error sending buffer %p: %s\n",
+			desc.addr, strerror(-rc));
+		ERR_PUT(desc, s);
+	}
+}
+
+static void server(struct unimsg_sock *s)
+{
+	int rc;
 
 	printf("I'm the server\n");
 
@@ -191,33 +261,16 @@ static void server(struct unimsg_sock *s)
 
 	s = cs;
 
+	if (opt_warmup) {
+		printf("Performing %u warmup RRs...\n", opt_warmup);
+		for (unsigned long i = 0; i < opt_warmup; i++)
+			do_server_rr(s);
+	}
+
 	printf("Handling requests\n");
 
-	for (unsigned i = 0; i < opt_iterations; i++) {
-		if (opt_busy_poll)
-			while ((rc = unimsg_sock_recv(s, &desc)) == -EAGAIN);
-		else
-			rc = unimsg_sock_recv(s, &desc);
-		if (rc) {
-			fprintf(stderr, "Error receiving desc: %s\n",
-				strerror(-rc));
-			ERR_CLOSE(s);
-		}
-
-		msg = desc.addr;
-		for (unsigned j = 0; j < opt_size / 8; j++)
-			msg[j]++;
-
-		if (opt_busy_poll)
-			while ((rc = unimsg_sock_send(s, &desc)) == -EAGAIN);
-		else
-			rc = unimsg_sock_send(s, &desc);
-		if (rc) {
-			fprintf(stderr, "Error sending buffer %p: %s\n",
-				desc.addr, strerror(-rc));
-			ERR_PUT(desc, s);
-		}
-	}
+	for (unsigned i = 0; i < opt_iterations; i++)
+		do_server_rr(s);
 
 	printf("Test terminated\n");
 

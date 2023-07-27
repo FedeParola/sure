@@ -3,3 +3,4 @@ config APPRRLATENCY_DEPENDENCIES
 	bool
 	default y
 	select LIBUNIMSG
+	select LIBPOSIX_TIME

@@ -5,6 +5,9 @@
 #include <string.h>
 #include <uk/plat/time.h>
 
+#define DEFAULT_SIZE 64
+#define DEFAULT_WARMUP 0
+#define DEFAULT_DELAY 0
 #define SERVER_VM_ID 0
 #define SERVER_PORT 5000
 #define CLIENT_VM_ID 1
@@ -12,11 +15,11 @@
 #define ERR_PUT(desc, s) ({ unimsg_buffer_put(&(desc)); ERR_CLOSE(s); })
 
 static unsigned opt_iterations = 0;
-static unsigned opt_size = 0;
+static unsigned opt_size = DEFAULT_SIZE;
 static int opt_client = 0;
 static int opt_busy_poll = 0;
-static unsigned opt_warmup = 0;
-static unsigned opt_delay = 0;
+static unsigned opt_warmup = DEFAULT_WARMUP;
+static unsigned opt_delay = DEFAULT_DELAY;
 static struct option long_options[] = {
 	{"iterations", required_argument, 0, 'i'},
 	{"size", required_argument, 0, 's'},
@@ -35,12 +38,12 @@ static void usage(const char *prog)
 		"  Usage: %s [OPTIONS]\n"
 		"  Options:\n"
 		"  -i, --iterations	Number of requests-responses to exchange\n"
-		"  -s, --size		Size of the message in bytes\n"
+		"  -s, --size		Size of the message in bytes (default %u)\n"
 		"  -c, --client		Behave as client (default is server)\n"
 		"  -b, --busy-poll	Use busy polling (non-blocking sockets)\n"
-		"  -w, --warmup		Number of warmup iterations\n"
-		"  -d, --delay		Delay between consecutive requests in ms (default 0)\n",
-		prog);
+		"  -w, --warmup		Number of warmup iterations (default %u)\n"
+		"  -d, --delay		Delay between consecutive requests in ms (default %u)\n",
+		prog, DEFAULT_SIZE, DEFAULT_WARMUP, DEFAULT_DELAY);
 
 	exit(1);
 }
@@ -85,9 +88,13 @@ static void parse_command_line(int argc, char **argv)
 		}
 	}
 
-	if (opt_iterations == 0 || opt_size == 0) {
-		fprintf(stderr, "Iterations and size are required parameteres "
-			"and must be > 0\n");
+	if (opt_size == 0) {
+		fprintf(stderr, "Size must be > 0\n");
+		usage(argv[0]);
+	}
+
+	if (opt_client && !opt_iterations) {
+		fprintf(stderr, "Client must specify iterations > 0\n");
 		usage(argv[0]);
 	}
 }
@@ -108,6 +115,7 @@ static void do_client_rr(struct unimsg_sock *s, unsigned long val)
 	msg = desc.addr;
 	for (unsigned j = 0; j < opt_size / 8; j++)
 		msg[j] = val;
+	desc.size = opt_size;
 
 	if (opt_busy_poll)
 		while ((rc = unimsg_sock_send(s, &desc)) == -EAGAIN);
@@ -126,6 +134,11 @@ static void do_client_rr(struct unimsg_sock *s, unsigned long val)
 	if (rc) {
 		fprintf(stderr, "Error receiving desc: %s\n", strerror(-rc));
 		ERR_CLOSE(s);
+	}
+
+	if (desc.size != opt_size) {
+		fprintf(stderr, "Unexpected message size %u\n", desc.size);
+		ERR_PUT(desc, s);
 	}
 
 	msg = desc.addr;
@@ -192,40 +205,11 @@ static void client(struct unimsg_sock *s)
 	printf("Socket closed\n");
 }
 
-static void do_server_rr(struct unimsg_sock *s)
+static void server(struct unimsg_sock *s)
 {
 	int rc;
 	struct unimsg_shm_desc desc;
 	unsigned long *msg;
-
-	if (opt_busy_poll)
-		while ((rc = unimsg_sock_recv(s, &desc)) == -EAGAIN);
-	else
-		rc = unimsg_sock_recv(s, &desc);
-	if (rc) {
-		fprintf(stderr, "Error receiving desc: %s\n",
-			strerror(-rc));
-		ERR_CLOSE(s);
-	}
-
-	msg = desc.addr;
-	for (unsigned j = 0; j < opt_size / 8; j++)
-		msg[j]++;
-
-	if (opt_busy_poll)
-		while ((rc = unimsg_sock_send(s, &desc)) == -EAGAIN);
-	else
-		rc = unimsg_sock_send(s, &desc);
-	if (rc) {
-		fprintf(stderr, "Error sending buffer %p: %s\n",
-			desc.addr, strerror(-rc));
-		ERR_PUT(desc, s);
-	}
-}
-
-static void server(struct unimsg_sock *s)
-{
-	int rc;
 
 	printf("I'm the server\n");
 
@@ -261,16 +245,41 @@ static void server(struct unimsg_sock *s)
 
 	s = cs;
 
-	if (opt_warmup) {
-		printf("Performing %u warmup RRs...\n", opt_warmup);
-		for (unsigned long i = 0; i < opt_warmup; i++)
-			do_server_rr(s);
-	}
-
 	printf("Handling requests\n");
 
-	for (unsigned i = 0; i < opt_iterations; i++)
-		do_server_rr(s);
+	/* Handle requests until the connection is closed by the client */
+	for (;;) {
+		if (opt_busy_poll)
+			while ((rc = unimsg_sock_recv(s, &desc)) == -EAGAIN);
+		else
+			rc = unimsg_sock_recv(s, &desc);
+
+		if (rc == -ECONNRESET) {
+			break;
+		} else if (rc) {
+			fprintf(stderr, "Error receiving desc: %s\n",
+				strerror(-rc));
+			ERR_CLOSE(s);
+		}
+
+		msg = desc.addr;
+		for (unsigned j = 0; j < desc.size / 8; j++)
+			msg[j]++;
+
+		if (opt_busy_poll)
+			while ((rc = unimsg_sock_send(s, &desc)) == -EAGAIN);
+		else
+			rc = unimsg_sock_send(s, &desc);
+
+		if (rc == -ECONNRESET) {
+			unimsg_buffer_put(&desc);
+			break;
+		} else if (rc) {
+			fprintf(stderr, "Error sending desc: %s\n",
+				strerror(-rc));
+			ERR_PUT(desc, s);
+		}
+	}
 
 	printf("Test terminated\n");
 

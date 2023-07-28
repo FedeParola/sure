@@ -15,6 +15,9 @@
 #include <unistd.h>
 #include "common.h"
 
+#define DEFAULT_SIZE 64
+#define DEFAULT_WARMUP 0
+#define DEFAULT_DELAY 0
 #define SERVER_ADDR 0x0100000a /* Already in nbo */
 #define LOCALHOST 0x0100007f /* localhost, already in nbo */
 #define SERVER_PORT 5000
@@ -25,13 +28,13 @@
 #define ERR_UNPIN(s) ({ if (opt_sk_msg) unlink(SOCKMAP_PATH); ERR_CLOSE(s); })
 
 static unsigned opt_iterations = 0;
-static unsigned opt_size = 0;
+static unsigned opt_size = DEFAULT_SIZE;
 static int opt_client = 0;
 static int opt_unix = 0;
 static int opt_sk_msg = 0;
 static int opt_server_addr = SERVER_ADDR;
-static unsigned opt_warmup = 0;
-static unsigned opt_delay = 0;
+static unsigned opt_warmup = DEFAULT_WARMUP;
+static unsigned opt_delay = DEFAULT_DELAY;
 static struct option long_options[] = {
 	{"iterations", required_argument, 0, 'i'},
 	{"size", required_argument, 0, 's'},
@@ -50,14 +53,14 @@ static void usage(const char *prog)
 		"  Usage: %s [OPTIONS]\n"
 		"  Options:\n"
 		"  -i, --iterations	Number of requests-responses to exchange\n"
-		"  -s, --size		Size of the message in bytes\n"
+		"  -s, --size		Size of the message in bytes (default %u)\n"
 		"  -c, --client		Behave as client (default is server)\n"
 		"  -u, --unix		Use AF_UNIX sockets\n"
-		"  -m, --sk-msg		Use SK_MSG acceleration (TCP socket only)\n"
+		"  -m, --sk-msg		Use SK_MSG acceleration (TCP sockets only)\n"
 		"  -l, --localhost	Run test on localhost\n"
-		"  -w, --warmup		Number of warmup iterations\n"
-		"  -d, --delay		Delay between consecutive requests in ms (default 0)\n",
-		prog);
+		"  -w, --warmup		Number of warmup iterations (default %u)\n"
+		"  -d, --delay		Delay between consecutive requests in ms (default %u)\n",
+		prog, DEFAULT_SIZE, DEFAULT_WARMUP, DEFAULT_DELAY);
 
 	exit(1);
 }
@@ -108,9 +111,13 @@ static void parse_command_line(int argc, char **argv)
 		}
 	}
 
-	if (opt_iterations == 0 || opt_size == 0) {
-		fprintf(stderr, "Iterations and size are required parameteres "
-			"and must be > 0\n");
+	if (opt_size == 0) {
+		fprintf(stderr, "Size must be > 0\n");
+		usage(argv[0]);
+	}
+
+	if (opt_client && !opt_iterations) {
+		fprintf(stderr, "Client must specify iterations > 0\n");
 		usage(argv[0]);
 	}
 
@@ -133,7 +140,7 @@ static void do_client_rr(int s, unsigned long val)
 		ERR_CLOSE(s);
 	}
 
-	if (recv(s, msg, opt_size, 0) != opt_size) {
+	if (recv(s, msg, sizeof(msg), 0) != opt_size) {
 		fprintf(stderr, "Error receiving message: %s\n",
 			strerror(errno));
 		ERR_CLOSE(s);
@@ -252,29 +259,11 @@ static void client(int s)
 	printf("Socket closed\n");
 }
 
-static void do_server_rr(int s)
-{
-	unsigned long msg[MAX_MSG_SIZE / sizeof(unsigned long)];
-
-	if (recv(s, msg, opt_size, 0) != opt_size) {
-		fprintf(stderr, "Error receiving message: %s\n",
-			strerror(errno));
-		ERR_UNPIN(s);
-	}
-
-	for (unsigned j = 0; j < opt_size / 8; j++)
-		msg[j]++;
-
-	if (send(s, msg, opt_size, 0) != opt_size) {
-		fprintf(stderr, "Error sending message: %s\n", strerror(errno));
-		ERR_UNPIN(s);
-	}
-}
-
 static void server(int s, char *path)
 {
 	struct bpf_object *bpf_prog;
 	int bpf_prog_fd, sockmap_fd;
+	unsigned long msg[MAX_MSG_SIZE / sizeof(unsigned long)];
 
 	printf("I'm the server\n");
 
@@ -383,16 +372,28 @@ static void server(int s, char *path)
 		printf("Socket added to sockmap\n");
 	}
 
-	if (opt_warmup) {
-		printf("Performing %u warmup RRs...\n", opt_warmup);
-		for (unsigned long i = 0; i < opt_warmup; i++)
-			do_server_rr(s);
-	}
-
 	printf("Handling requests\n");
 	
-	for (unsigned i = 0; i < opt_iterations; i++)
-			do_server_rr(s);
+	/* Handle requests until the connection is closed by the client */
+	for (;;) {
+		ssize_t size = recv(s, msg, sizeof(msg), 0);
+		if (size == 0) {
+			break;
+		} else if (size < 0) {
+			fprintf(stderr, "Error receiving message: %s\n",
+				strerror(errno));
+			ERR_UNPIN(s);
+		}
+
+		for (unsigned j = 0; j < size / 8; j++)
+			msg[j]++;
+
+		if (send(s, msg, size, 0) != size) {
+			fprintf(stderr, "Error sending message: %s\n",
+				strerror(errno));
+			ERR_UNPIN(s);
+		}
+	}
 
 	printf("Test terminated\n");
 

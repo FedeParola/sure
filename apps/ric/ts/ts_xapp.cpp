@@ -287,13 +287,13 @@ static struct rest_resp do_post(__u32 addr, __u16 port, string url, string body)
 	struct unimsg_shm_desc desc;
 	int rc;
 
-	rc = unimsg_sock_create(&rc_sock, UNIMSG_SOCK_CONNECTED, 0);
+	rc = unimsg_socket(&rc_sock);
 	if (rc) {
 		fprintf(stderr, "Error creating socket: %s\n", strerror(-rc));
 		exit(1);
 	}
 
-	rc = unimsg_sock_connect(rc_sock, addr, port);
+	rc = unimsg_connect(rc_sock, addr, port);
 	if (rc) {
 		fprintf(stderr, "Error connecting to RC: %s\n", strerror(-rc));
 		exit(1);
@@ -309,19 +309,19 @@ static struct rest_resp do_post(__u32 addr, __u16 port, string url, string body)
 		body.size(), body.c_str());
 	desc.size = strlen((char *)desc.addr);
 
-	rc = unimsg_sock_send(rc_sock, &desc);
+	rc = unimsg_send(rc_sock, &desc, 0);
 	if (rc) {
 		fprintf(stderr, "Error sending desc: %s\n", strerror(-rc));
 		exit(1);
 	}
 
-	rc = unimsg_sock_recv(rc_sock, &desc);
+	rc = unimsg_recv(rc_sock, &desc, 0);
 	if (rc) {
 		fprintf(stderr, "Error receiving desc: %s\n", strerror(-rc));
 		exit(1);
 	}
 
-	unimsg_sock_close(rc_sock);
+	unimsg_close(rc_sock);
 
 	struct rest_resp resp;
 	if (sscanf((char *)desc.addr, "HTTP/1.1 %u OK", &resp.status_code)
@@ -489,13 +489,13 @@ void send_prediction_request(vector<string> ues_to_predict)
 {
 	struct unimsg_shm_desc desc;
 
-	int rc = unimsg_sock_create(&qp_sock, UNIMSG_SOCK_CONNECTED, 0);
+	int rc = unimsg_socket(&qp_sock);
 	if (rc) {
 		fprintf(stderr, "Error creating socket: %s\n", strerror(-rc));
 		exit(1);
 	}
 
-	rc = unimsg_sock_connect(qp_sock, QP_ADDR, QP_PORT);
+	rc = unimsg_connect(qp_sock, QP_ADDR, QP_PORT);
 	if (rc) {
 		fprintf(stderr, "Error connecting to QP: %s\n", strerror(-rc));
 		exit(1);
@@ -527,19 +527,19 @@ void send_prediction_request(vector<string> ues_to_predict)
 	cout << "[INFO] Prediction Request length=" << desc.size << ", payload="
 	     << message_body << endl;
 
-	rc = unimsg_sock_send(qp_sock, &desc);
+	rc = unimsg_send(qp_sock, &desc, 0);
 	if (rc) {
 		fprintf(stderr, "Error sending desc: %s\n", strerror(-rc));
 		exit(1);
 	}
 
-	rc = unimsg_sock_recv(qp_sock, &desc);
+	rc = unimsg_recv(qp_sock, &desc, 0);
 	if (rc) {
 		fprintf(stderr, "Error receiving desc: %s\n", strerror(-rc));
 		exit(1);
 	}
 
-	unimsg_sock_close(qp_sock);
+	unimsg_close(qp_sock);
 
 	prediction_callback(desc);
 }
@@ -564,7 +564,7 @@ void ad_callback(struct unimsg_shm_desc desc)
 
 	/* Send an empty resposne, it can only mean ACK */
 	desc.size = 0;
-	int rc = unimsg_sock_send(ad_sock, &desc);
+	int rc = unimsg_send(ad_sock, &desc, 0);
 	if (rc) {
 		fprintf(stderr, "Error receiving desc: %s\n", strerror(-rc));
 		exit(1);
@@ -577,20 +577,20 @@ int main(int argc, char *argv[])
 {
 	int rc;
 
-	rc = unimsg_sock_create(&ad_sock, UNIMSG_SOCK_CONNECTED, 0);
+	rc = unimsg_socket(&ad_sock);
 	if (rc) {
 		fprintf(stderr, "Error creating socket: %s\n", strerror(-rc));
 		exit(1);
 	}
 
-	rc = unimsg_sock_bind(ad_sock, PORT);
+	rc = unimsg_bind(ad_sock, PORT);
 	if (rc) {
 		fprintf(stderr, "Error binding to port %d: %s\n", PORT,
 			strerror(-rc));
 		exit(1);
 	}
 
-	rc = unimsg_sock_listen(ad_sock);
+	rc = unimsg_listen(ad_sock);
 	if (rc) {
 		fprintf(stderr, "Error listening: %s\n", strerror(-rc));
 		exit(1);
@@ -599,7 +599,7 @@ int main(int argc, char *argv[])
 	printf("Waiting for AD connection\n");
 
 	struct unimsg_sock *tmp_sock;
-	rc = unimsg_sock_accept(ad_sock, &tmp_sock);
+	rc = unimsg_accept(ad_sock, &tmp_sock, 0);
 	if (rc) {
 		fprintf(stderr, "Error accepting connection: %s\n",
 			strerror(-rc));
@@ -608,11 +608,11 @@ int main(int argc, char *argv[])
 
 	printf("AD connected\n");
 
-	unimsg_sock_close(ad_sock);
+	unimsg_close(ad_sock);
 	ad_sock = tmp_sock;
 
 	struct unimsg_shm_desc desc;
-	rc = unimsg_sock_recv(ad_sock, &desc);
+	rc = unimsg_recv(ad_sock, &desc, 0);
 	if (rc) {
 		fprintf(stderr, "Error receiving desc: %s\n", strerror(-rc));
 		exit(1);
@@ -620,7 +620,7 @@ int main(int argc, char *argv[])
 
 	ad_callback(desc);
 
-	unimsg_sock_close(ad_sock);
+	unimsg_close(ad_sock);
 
 	return 0;
 }

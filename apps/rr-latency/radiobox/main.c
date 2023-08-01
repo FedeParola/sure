@@ -11,7 +11,7 @@
 #define SERVER_VM_ID 0
 #define SERVER_PORT 5000
 #define CLIENT_VM_ID 1
-#define ERR_CLOSE(s) ({ unimsg_sock_close(s); exit(1); })
+#define ERR_CLOSE(s) ({ unimsg_close(s); exit(1); })
 #define ERR_PUT(desc, s) ({ unimsg_buffer_put(&(desc)); ERR_CLOSE(s); })
 
 static unsigned opt_iterations = 0;
@@ -118,9 +118,9 @@ static void do_client_rr(struct unimsg_sock *s, unsigned long val)
 	desc.size = opt_size;
 
 	if (opt_busy_poll)
-		while ((rc = unimsg_sock_send(s, &desc)) == -EAGAIN);
+		while ((rc = unimsg_send(s, &desc, 1)) == -EAGAIN);
 	else
-		rc = unimsg_sock_send(s, &desc);
+		rc = unimsg_send(s, &desc, 0);
 	if (rc) {
 		fprintf(stderr, "Error sending buffer %p: %s\n", desc.addr,
 			strerror(-rc));
@@ -128,9 +128,9 @@ static void do_client_rr(struct unimsg_sock *s, unsigned long val)
 	}
 
 	if (opt_busy_poll)
-		while ((rc = unimsg_sock_recv(s, &desc)) == -EAGAIN);
+		while ((rc = unimsg_recv(s, &desc, 1)) == -EAGAIN);
 	else
-		rc = unimsg_sock_recv(s, &desc);
+		rc = unimsg_recv(s, &desc, 0);
 	if (rc) {
 		fprintf(stderr, "Error receiving desc: %s\n", strerror(-rc));
 		ERR_CLOSE(s);
@@ -158,7 +158,7 @@ static void client(struct unimsg_sock *s)
 
 	printf("I'm the client\n");
 
-	rc = unimsg_sock_connect(s, SERVER_VM_ID, SERVER_PORT);
+	rc = unimsg_connect(s, SERVER_VM_ID, SERVER_PORT);
 	if (rc) {
 		fprintf(stderr, "Error connecting to server: %s\n",
 			strerror(-rc));
@@ -201,7 +201,7 @@ static void client(struct unimsg_sock *s)
 	printf("total-time=%lu\nrr-latency=%lu\n", total,
 	       total / opt_iterations);
 
-	unimsg_sock_close(s);
+	unimsg_close(s);
 	printf("Socket closed\n");
 }
 
@@ -213,7 +213,7 @@ static void server(struct unimsg_sock *s)
 
 	printf("I'm the server\n");
 
-	rc = unimsg_sock_bind(s, SERVER_PORT);
+	rc = unimsg_bind(s, SERVER_PORT);
 	if (rc) {
 		fprintf(stderr, "Error binding to port %d: %s\n", SERVER_PORT,
 			strerror(-rc));
@@ -221,7 +221,7 @@ static void server(struct unimsg_sock *s)
 	}
 	printf("Socket bound\n");
 
-	rc = unimsg_sock_listen(s);
+	rc = unimsg_listen(s);
 	if (rc) {
 		fprintf(stderr, "Error listening: %s\n", strerror(-rc));
 		ERR_CLOSE(s);
@@ -230,9 +230,9 @@ static void server(struct unimsg_sock *s)
 
 	struct unimsg_sock *cs;
 	if (opt_busy_poll)
-		while ((rc = unimsg_sock_accept(s, &cs)) == -EAGAIN);
+		while ((rc = unimsg_accept(s, &cs, 1)) == -EAGAIN);
 	else
-		rc = unimsg_sock_accept(s, &cs);
+		rc = unimsg_accept(s, &cs, 0);
 	if (rc) {
 		fprintf(stderr, "Error accepting connection: %s\n",
 			strerror(-rc));
@@ -240,7 +240,7 @@ static void server(struct unimsg_sock *s)
 	}
 	printf("Connection accepted\n");
 
-	unimsg_sock_close(s);
+	unimsg_close(s);
 	printf("Listening socket closed\n");
 
 	s = cs;
@@ -250,9 +250,9 @@ static void server(struct unimsg_sock *s)
 	/* Handle requests until the connection is closed by the client */
 	for (;;) {
 		if (opt_busy_poll)
-			while ((rc = unimsg_sock_recv(s, &desc)) == -EAGAIN);
+			while ((rc = unimsg_recv(s, &desc, 1)) == -EAGAIN);
 		else
-			rc = unimsg_sock_recv(s, &desc);
+			rc = unimsg_recv(s, &desc, 0);
 
 		if (rc == -ECONNRESET) {
 			break;
@@ -267,9 +267,9 @@ static void server(struct unimsg_sock *s)
 			msg[j]++;
 
 		if (opt_busy_poll)
-			while ((rc = unimsg_sock_send(s, &desc)) == -EAGAIN);
+			while ((rc = unimsg_send(s, &desc, 1)) == -EAGAIN);
 		else
-			rc = unimsg_sock_send(s, &desc);
+			rc = unimsg_send(s, &desc, 0);
 
 		if (rc == -ECONNRESET) {
 			unimsg_buffer_put(&desc);
@@ -283,7 +283,7 @@ static void server(struct unimsg_sock *s)
 
 	printf("Test terminated\n");
 
-	unimsg_sock_close(s);
+	unimsg_close(s);
 	printf("Socket closed\n");
 }
 
@@ -294,7 +294,7 @@ int main(int argc, char *argv[])
 
 	parse_command_line(argc, argv);
 
-	rc = unimsg_sock_create(&s, UNIMSG_SOCK_CONNECTED, opt_busy_poll);
+	rc = unimsg_socket(&s);
 	if (rc) {
 		fprintf(stderr, "Error creating unimsg socket: %s\n",
 			strerror(-rc));

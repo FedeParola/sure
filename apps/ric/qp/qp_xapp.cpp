@@ -94,7 +94,7 @@ void prediction_callback(struct unimsg_shm_desc desc)
 	cout << "[QP] Sending a message to TS, length=" << desc.size << "\n";
 	cout << "[QP] Message body " << body << endl;
 
-	int rc = unimsg_sock_send(sock, &desc);
+	int rc = unimsg_send(sock, &desc, 0);
 	if (rc) {
 		fprintf(stderr, "Error sending desc: %s\n", strerror(-rc));
 		exit(1);
@@ -105,20 +105,20 @@ int main(int argc, char *argv[])
 {
 	int rc;
 
-	rc = unimsg_sock_create(&sock, UNIMSG_SOCK_CONNECTED, 0);
+	rc = unimsg_socket(&sock);
 	if (rc) {
 		fprintf(stderr, "Error creating socket: %s\n", strerror(-rc));
 		exit(1);
 	}
 
-	rc = unimsg_sock_bind(sock, PORT);
+	rc = unimsg_bind(sock, PORT);
 	if (rc) {
 		fprintf(stderr, "Error binding to port %d: %s\n", PORT,
 			strerror(-rc));
 		exit(1);
 	}
 
-	rc = unimsg_sock_listen(sock);
+	rc = unimsg_listen(sock);
 	if (rc) {
 		fprintf(stderr, "Error listening: %s\n", strerror(-rc));
 		exit(1);
@@ -127,7 +127,7 @@ int main(int argc, char *argv[])
 	printf("Waiting for TS connection\n");
 
 	struct unimsg_sock *tmp_sock;
-	rc = unimsg_sock_accept(sock, &tmp_sock);
+	rc = unimsg_accept(sock, &tmp_sock, 0);
 	if (rc) {
 		fprintf(stderr, "Error accepting connection: %s\n",
 			strerror(-rc));
@@ -136,11 +136,11 @@ int main(int argc, char *argv[])
 
 	printf("TS connected\n");
 
-	unimsg_sock_close(sock);
+	unimsg_close(sock);
 	sock = tmp_sock;
 
 	struct unimsg_shm_desc desc;
-	rc = unimsg_sock_recv(sock, &desc);
+	rc = unimsg_recv(sock, &desc, 0);
 	if (rc) {
 		fprintf(stderr, "Error receiving desc: %s\n", strerror(-rc));
 		exit(1);
@@ -148,7 +148,7 @@ int main(int argc, char *argv[])
 
 	prediction_callback(desc);
 
-	unimsg_sock_close(sock);
+	unimsg_close(sock);
 
 	return 0;
 }

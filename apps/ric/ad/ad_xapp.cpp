@@ -92,13 +92,13 @@ int main(int argc, char *argv[])
 	int rc;
 
 	struct unimsg_sock *ts_sock;
-	rc = unimsg_sock_create(&ts_sock, UNIMSG_SOCK_CONNECTED, 0);
+	rc = unimsg_socket(&ts_sock);
 	if (rc) {
 		fprintf(stderr, "Error creating socket: %s\n", strerror(-rc));
 		exit(1);
 	}
 
-	rc = unimsg_sock_connect(ts_sock, TS_ADDR, TS_PORT);
+	rc = unimsg_connect(ts_sock, TS_ADDR, TS_PORT);
 	if (rc) {
 		fprintf(stderr, "Error connecting to TS: %s\n", strerror(-rc));
 		exit(1);
@@ -122,13 +122,13 @@ int main(int argc, char *argv[])
 	memcpy(desc.addr, ad_msg, sizeof(ad_msg));
 	desc.size = sizeof(ad_msg);
 
-	rc = unimsg_sock_send(ts_sock, &desc);
+	rc = unimsg_send(ts_sock, &desc, 0);
 	if (rc) {
 		fprintf(stderr, "Error sending desc: %s\n", strerror(-rc));
 		exit(1);
 	}
 
-	rc = unimsg_sock_recv(ts_sock, &desc);
+	rc = unimsg_recv(ts_sock, &desc, 0);
 	if (rc) {
 		fprintf(stderr, "Error receiving desc: %s\n", strerror(-rc));
 		exit(1);
@@ -136,7 +136,7 @@ int main(int argc, char *argv[])
 
 	ts_callback(desc);
 
-	unimsg_sock_close(ts_sock);
+	unimsg_close(ts_sock);
 
 	return 0;
 }

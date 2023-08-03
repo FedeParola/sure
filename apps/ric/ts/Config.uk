@@ -4,5 +4,7 @@ config APPRC_DEPENDENCIES
 	default y
 	select LIBUNIMSG
 	select LIBCXX
+	select CXX_THREADS
 	select LIBCOMPILER_RT
 	select LIBMUSL
+	select LIBRAPIDJSON

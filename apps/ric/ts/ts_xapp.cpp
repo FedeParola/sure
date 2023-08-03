@@ -1,69 +1,27 @@
-// vi: ts=4 sw=4 noet:
-/*
-==================================================================================
-	Copyright (c) 2020 AT&T Intellectual Property.
-
-   Licensed under the Apache License, Version 2.0 (the "License");
-   you may not use this file except in compliance with the License.
-   You may obtain a copy of the License at
-
-       http://www.apache.org/licenses/LICENSE-2.0
-
-   Unless required by applicable law or agreed to in writing, software
-   distributed under the License is distributed on an "AS IS" BASIS,
-   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-   See the License for the specific language governing permissions and
-   limitations under the License.
-==================================================================================
-*/
-
-/*
-	Mnemonic:	ts_xapp.cpp
-	Abstract:	Traffic Steering xApp
-		   1. Receives A1 Policy
-			       2. Receives anomaly detection
-			       3. Requests prediction for UE throughput on current and neighbor cells
-			       4. Receives prediction
-			       5. Optionally exercises Traffic Steering action over E2
-
-	Date:     22 April 2020
-	Author:		Ron Shacham
-
-  Modified: 21 May 2021 (Alexandre Huff)
-	    Update for traffic steering use case in release D.
-	    07 Dec 2021 (Alexandre Huff)
-	    Update for traffic steering use case in release E.
-*/
-
-#include <stdio.h>
-#include <string.h>
-#include <unistd.h>
-
-#include <thread>
 #include <iostream>
-#include <memory>
-#include <algorithm>
-#include <set>
 #include <map>
-#include <vector>
-#include <string>
-#include <unordered_map>
-#include <deque>
 #include <rapidjson/document.h>
-#include <rapidjson/writer.h>
-#include <rapidjson/stringbuffer.h>
-#include <rapidjson/schema.h>
-#include <rapidjson/reader.h>
 #include <rapidjson/prettywriter.h>
-#include <unimsg/net.h>
-
+#include <rapidjson/reader.h>
+#include <rapidjson/schema.h>
+#include <rapidjson/stringbuffer.h>
+#include <rapidjson/writer.h>
+#include <set>
 #include <sstream>
+#include <stdio.h>
+#include <string>
+#include <string.h>
+#include <unimsg/net.h>
+#include <unistd.h>
+#include <unordered_map>
+#include <vector>
 
 #define PORT 4560
 #define QP_ADDR 1
 #define QP_PORT 4580
 #define RC_ADDR 2
 #define RC_PORT 5000
+#define ITERATIONS 20
 
 static int downlink_threshold = 0;  // A1 policy type 20008 (in percentage)
 static struct unimsg_sock *ad_sock;
@@ -78,146 +36,59 @@ using Data = std::vector<uint8_t>;
 using DataMap = std::map<Key, Data>;
 using Keys = std::set<Key>;
 
-// scoped enum to identify which API is used to send control messages
-enum class TsControlApi { REST, gRPC };
-TsControlApi ts_control_api;  // api to send control messages
-string ts_control_ep;         // api target endpoint
-
-typedef struct nodeb {
-  string ran_name;
-  struct {
-    string plmn_id;
-    string nb_id;
-  } global_nb_id;
-} nodeb_t;
-
-unordered_map<string, shared_ptr<nodeb_t>> cell_map; // maps each cell to its nodeb
-
-/* struct UEData {
-  string serving_cell;
-  int serving_cell_rsrp;
-}; */
-
-struct PolicyHandler : public BaseReaderHandler<UTF8<>, PolicyHandler> {
-  /*
-    Assuming we receive the following payload from A1 Mediator
-    {"operation": "CREATE", "policy_type_id": 20008, "policy_instance_id": "tsapolicy145", "payload": {"threshold": 5}}
-  */
-  unordered_map<string, string> cell_pred;
-  std::string ue_id;
-  bool ue_id_found = false;
-  string curr_key = "";
-  string curr_value = "";
-  int policy_type_id;
-  int policy_instance_id;
-  int threshold;
-  std::string operation;
-  bool found_threshold = false;
-
-  bool Null() { return true; }
-  bool Bool(bool b) { return true; }
-  bool Int(int i) {
-
-    if (curr_key.compare("policy_type_id") == 0) {
-      policy_type_id = i;
-    } else if (curr_key.compare("policy_instance_id") == 0) {
-      policy_instance_id = i;
-    } else if (curr_key.compare("threshold") == 0) {
-      found_threshold = true;
-      threshold = i;
-    }
-
-    return true;
-  }
-  bool Uint(unsigned u) {
-
-    if (curr_key.compare("policy_type_id") == 0) {
-      policy_type_id = u;
-    } else if (curr_key.compare("policy_instance_id") == 0) {
-      policy_instance_id = u;
-    } else if (curr_key.compare("threshold") == 0) {
-      found_threshold = true;
-      threshold = u;
-    }
-
-    return true;
-  }
-  bool Int64(int64_t i) {  return true; }
-  bool Uint64(uint64_t u) {  return true; }
-  bool Double(double d) {  return true; }
-  bool String(const char* str, SizeType length, bool copy) {
-
-    if (curr_key.compare("operation") != 0) {
-      operation = str;
-    }
-
-    return true;
-  }
-  bool StartObject() {
-
-    return true;
-  }
-  bool Key(const char* str, SizeType length, bool copy) {
-
-    curr_key = str;
-
-    return true;
-  }
-  bool EndObject(SizeType memberCount) {  return true; }
-  bool StartArray() {  return true; }
-  bool EndArray(SizeType elementCount) {  return true; }
-};
-
 struct PredictionHandler : public BaseReaderHandler<UTF8<>, PredictionHandler> {
-  unordered_map<string, int> cell_pred_down;
-  unordered_map<string, int> cell_pred_up;
-  std::string ue_id;
-  bool ue_id_found = false;
-  string curr_key = "";
-  string curr_value = "";
-  string serving_cell_id;
-  bool down_val = true;
-  bool Null() {  return true; }
-  bool Bool(bool b) {  return true; }
-  bool Int(int i) {  return true; }
-  bool Uint(unsigned u) {
-    // Currently, we assume the first cell in the prediction message is the serving cell
-    if ( serving_cell_id.empty() ) {
-      serving_cell_id = curr_key;
-    }
+	unordered_map<string, int> cell_pred_down;
+	unordered_map<string, int> cell_pred_up;
+	std::string ue_id;
+	bool ue_id_found = false;
+	string curr_key = "";
+	string curr_value = "";
+	string serving_cell_id;
+	bool down_val = true;
+	bool Null() {  return true; }
+	bool Bool(bool b) {  return true; }
+	bool Int(int i) {  return true; }
+	bool Uint(unsigned u)
+	{
+		/* Currently, we assume the first cell in the prediction message
+		 * is the serving cell
+		 */
+		if ( serving_cell_id.empty() ) {
+			serving_cell_id = curr_key;
+		}
 
-    if (down_val) {
-      cell_pred_down[curr_key] = u;
-      down_val = false;
-    } else {
-      cell_pred_up[curr_key] = u;
-      down_val = true;
-    }
+		if (down_val) {
+			cell_pred_down[curr_key] = u;
+			down_val = false;
+		} else {
+			cell_pred_up[curr_key] = u;
+			down_val = true;
+		}
 
-    return true;
+		return true;
+	}
+	bool Int64(int64_t i) {  return true; }
+	bool Uint64(uint64_t u) {  return true; }
+	bool Double(double d) {  return true; }
+	bool String(const char* str, SizeType length, bool copy)
+	{
+		return true;
+	}
+	bool StartObject() {  return true; }
+	bool Key(const char* str, SizeType length, bool copy)
+	{
+		if (!ue_id_found) {
+			ue_id = str;
+			ue_id_found = true;
+		} else {
+			curr_key = str;
+		}
 
-  }
-  bool Int64(int64_t i) {  return true; }
-  bool Uint64(uint64_t u) {  return true; }
-  bool Double(double d) {  return true; }
-  bool String(const char* str, SizeType length, bool copy) {
-
-    return true;
-  }
-  bool StartObject() {  return true; }
-  bool Key(const char* str, SizeType length, bool copy) {
-    if (!ue_id_found) {
-
-      ue_id = str;
-      ue_id_found = true;
-    } else {
-      curr_key = str;
-    }
-    return true;
-  }
-  bool EndObject(SizeType memberCount) {  return true; }
-  bool StartArray() {  return true; }
-  bool EndArray(SizeType elementCount) {  return true; }
+		return true;
+	}
+	bool EndObject(SizeType memberCount) {  return true; }
+	bool StartArray() {  return true; }
+	bool EndArray(SizeType elementCount) {  return true; }
 };
 
 struct AnomalyHandler : public BaseReaderHandler<UTF8<>, AnomalyHandler> {
@@ -247,25 +118,6 @@ struct AnomalyHandler : public BaseReaderHandler<UTF8<>, AnomalyHandler> {
 		return true;
 	}
 };
-
-// void policy_callback( Message& mbuf, int mtype, int subid, int len, Msg_component payload,  void* data ) {
-//   string arg ((const char*)payload.get(), len); // RMR payload might not have a nil terminanted char
-
-//   cout << "[INFO] Policy Callback got a message, type=" << mtype << ", length=" << len << "\n";
-//   cout << "[INFO] Payload is " << arg << endl;
-
-//   PolicyHandler handler;
-//   Reader reader;
-//   StringStream ss(arg.c_str());
-//   reader.Parse(ss,handler);
-
-//   //Set the threshold value
-//   if (handler.found_threshold) {
-//     cout << "[INFO] Setting Threshold for A1-P value: " << handler.threshold << "%\n";
-//     downlink_threshold = handler.threshold;
-//   }
-
-// }
 
 struct rest_resp {
 	unsigned status_code;
@@ -395,8 +247,8 @@ void send_rest_control_request(string ue_id, string serving_cell_id,
 
 	string msg = s.GetString();
 
-	cout << "[INFO] Sending a HandOff CONTROL message\n";
-	cout << "[INFO] HandOff request is " << msg << endl;
+	// cout << "[INFO] Sending a HandOff CONTROL message\n";
+	// cout << "[INFO] HandOff request is " << msg << endl;
 
 	struct rest_resp resp = do_post(RC_ADDR, RC_PORT, "/api/echo", msg);
 
@@ -409,7 +261,7 @@ void send_rest_control_request(string ue_id, string serving_cell_id,
 		rapidjson::StringBuffer s;
 		rapidjson::PrettyWriter<rapidjson::StringBuffer> writer(s);
 		document.Accept(writer);
-		cout << "[INFO] HandOff reply is " << s.GetString() << endl;
+		// cout << "[INFO] HandOff reply is " << s.GetString() << endl;
 
 	} else {
 		cout << "[ERROR] Unexpected HTTP code " << resp.status_code
@@ -423,9 +275,9 @@ void prediction_callback(struct unimsg_shm_desc desc)
 {
 	string json ((char *)desc.addr, desc.size);
 
-	cout << "[INFO] Prediction Callback got a message, length=" << desc.size
-	     << "\n";
-	cout << "[INFO] Payload is " << json << endl;
+	// cout << "[INFO] Prediction Callback got a message, length=" << desc.size
+	//      << "\n";
+	// cout << "[INFO] Payload is " << json << endl;
 
 	unimsg_buffer_put(&desc);
 
@@ -480,28 +332,19 @@ void prediction_callback(struct unimsg_shm_desc desc)
 					  handler.serving_cell_id,
 					  highest_throughput_cell_id);
 	} else {
-		cout << "[INFO] The current serving cell \""
-		     << handler.serving_cell_id << "\" is the best one" << endl;
+		/* We always send a control request for testing purposes */
+		send_rest_control_request(handler.ue_id,
+					  handler.serving_cell_id,
+					  highest_throughput_cell_id);
 	}
 }
 
 void send_prediction_request(vector<string> ues_to_predict)
 {
 	struct unimsg_shm_desc desc;
+	int rc;
 
-	int rc = unimsg_socket(&qp_sock);
-	if (rc) {
-		fprintf(stderr, "Error creating socket: %s\n", strerror(-rc));
-		exit(1);
-	}
-
-	rc = unimsg_connect(qp_sock, QP_ADDR, QP_PORT);
-	if (rc) {
-		fprintf(stderr, "Error connecting to QP: %s\n", strerror(-rc));
-		exit(1);
-	}
-
-	unimsg_buffer_get(&desc); 
+	rc = unimsg_buffer_get(&desc);
 	if (rc) {
 		fprintf(stderr, "Error getting buffer: %s\n", strerror(-rc));
 		exit(1);
@@ -524,8 +367,8 @@ void send_prediction_request(vector<string> ues_to_predict)
 	memcpy(desc.addr, message_body.c_str(), message_body.size());
 	desc.size = message_body.size();
 
-	cout << "[INFO] Prediction Request length=" << desc.size << ", payload="
-	     << message_body << endl;
+	// cout << "[INFO] Prediction Request length=" << desc.size << ", payload="
+	//      << message_body << endl;
 
 	rc = unimsg_send(qp_sock, &desc, 0);
 	if (rc) {
@@ -539,8 +382,6 @@ void send_prediction_request(vector<string> ues_to_predict)
 		exit(1);
 	}
 
-	unimsg_close(qp_sock);
-
 	prediction_callback(desc);
 }
 
@@ -553,73 +394,90 @@ void ad_callback(struct unimsg_shm_desc desc)
 {
 	string json ((char *)desc.addr, desc.size);
 
-	cout << "[INFO] AD Callback got a message, length=" << desc.size
-	     << "\n";
-	cout << "[INFO] Payload is " << json << "\n";
+	// cout << "[INFO] AD Callback got a message, length=" << desc.size
+	//      << "\n";
+	// cout << "[INFO] Payload is " << json << "\n";
 
 	AnomalyHandler handler;
 	Reader reader;
 	StringStream ss(json.c_str());
 	reader.Parse(ss,handler);
 
-	/* Send an empty resposne, it can only mean ACK */
+	send_prediction_request(handler.prediction_ues);
+
+	/* Send the same message back as ACK */
 	desc.size = 0;
 	int rc = unimsg_send(ad_sock, &desc, 0);
 	if (rc) {
 		fprintf(stderr, "Error receiving desc: %s\n", strerror(-rc));
 		exit(1);
 	}
-
-	send_prediction_request(handler.prediction_ues);
 }
 
 int main(int argc, char *argv[])
 {
+	struct unimsg_sock *lsock;
 	int rc;
 
-	rc = unimsg_socket(&ad_sock);
+	rc = unimsg_socket(&lsock);
 	if (rc) {
 		fprintf(stderr, "Error creating socket: %s\n", strerror(-rc));
 		exit(1);
 	}
 
-	rc = unimsg_bind(ad_sock, PORT);
+	rc = unimsg_bind(lsock, PORT);
 	if (rc) {
 		fprintf(stderr, "Error binding to port %d: %s\n", PORT,
 			strerror(-rc));
 		exit(1);
 	}
 
-	rc = unimsg_listen(ad_sock);
+	rc = unimsg_listen(lsock);
 	if (rc) {
 		fprintf(stderr, "Error listening: %s\n", strerror(-rc));
 		exit(1);
 	}
 
-	printf("Waiting for AD connection\n");
+	cout << "[INFO] Waiting for AD connection\n";
 
-	struct unimsg_sock *tmp_sock;
-	rc = unimsg_accept(ad_sock, &tmp_sock, 0);
+	rc = unimsg_accept(lsock, &ad_sock, 0);
 	if (rc) {
 		fprintf(stderr, "Error accepting connection: %s\n",
 			strerror(-rc));
 		exit(1);
 	}
 
-	printf("AD connected\n");
+	unimsg_close(lsock);
 
-	unimsg_close(ad_sock);
-	ad_sock = tmp_sock;
+	cout << "[INFO] AD connected\n";
 
-	struct unimsg_shm_desc desc;
-	rc = unimsg_recv(ad_sock, &desc, 0);
+	rc = unimsg_socket(&qp_sock);
 	if (rc) {
-		fprintf(stderr, "Error receiving desc: %s\n", strerror(-rc));
+		fprintf(stderr, "Error creating socket: %s\n", strerror(-rc));
 		exit(1);
 	}
 
-	ad_callback(desc);
+	rc = unimsg_connect(qp_sock, QP_ADDR, QP_PORT);
+	if (rc) {
+		fprintf(stderr, "Error connecting to QP: %s\n", strerror(-rc));
+		exit(1);
+	}
 
+	cout << "[INFO] Connection to QP established\n";
+
+	for (int i = 0; i < ITERATIONS; i++) {
+		struct unimsg_shm_desc desc;
+		rc = unimsg_recv(ad_sock, &desc, 0);
+		if (rc) {
+			fprintf(stderr, "Error receiving desc: %s\n",
+				strerror(-rc));
+			exit(1);
+		}
+
+		ad_callback(desc);
+	}
+
+	unimsg_close(qp_sock);
 	unimsg_close(ad_sock);
 
 	return 0;

@@ -1,47 +1,16 @@
-// vi: ts=4 sw=4 noet:
-/*
-==================================================================================
-	Copyright (c) 2021 AT&T Intellectual Property.
-	Copyright (c) 2021 Alexandre Huff.
-
-   Licensed under the Apache License, Version 2.0 (the "License");
-   you may not use this file except in compliance with the License.
-   You may obtain a copy of the License at
-
-       http://www.apache.org/licenses/LICENSE-2.0
-
-   Unless required by applicable law or agreed to in writing, software
-   distributed under the License is distributed on an "AS IS" BASIS,
-   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-   See the License for the specific language governing permissions and
-   limitations under the License.
-==================================================================================
-*/
-
-/*
-	Mnemonic:	qp_xapp.cpp
-	Abstract:   Simulates both, the QP Driver and QP xApp for testing the behavior
-		of the TS xApp.
-
-	Date:		20 May 2021
-	Author:		Alexandre Huff
-*/
-
-#include <cstdlib>
-#include <ctime>
 #include <iostream>
-#include <memory>
 #include <rapidjson/document.h>
-#include <rapidjson/writer.h>
-#include <rapidjson/stringbuffer.h>
-#include <rapidjson/schema.h>
 #include <rapidjson/reader.h>
+#include <rapidjson/schema.h>
+#include <rapidjson/stringbuffer.h>
+#include <rapidjson/writer.h>
 #include <string.h>
 #include <thread>
 #include <unimsg/net.h>
 #include <unistd.h>
 
 #define PORT 4580
+#define ITERATIONS 20
 
 using namespace rapidjson;
 using namespace std;
@@ -52,9 +21,9 @@ void prediction_callback(struct unimsg_shm_desc desc)
 {
 	string json ((char *)desc.addr, desc.size);
 
-	cout << "[QP] Prediction Callback got a message, length=" << desc.size
-	     << "\n";
-	cout << "[QP] Payload is " << json << endl;
+	// cout << "[QP] Prediction Callback got a message, length=" << desc.size
+	//      << "\n";
+	// cout << "[QP] Payload is " << json << endl;
 
 	Document document;
 	document.Parse(json.c_str());
@@ -64,14 +33,14 @@ void prediction_callback(struct unimsg_shm_desc desc)
 		return;
 	string ueid = uePred[0].GetString();
 	/* We want to create:
-		* {
-		*	"ueid-user1": {
-		*		"CID1": [10, 20],
-		*		"CID2": [30, 40],
-		*		"CID3": [50, 60]
-		*	}
-		* }";
-		*/
+	 * {
+	 *	"ueid-user1": {
+	 *		"CID1": [10, 20],
+	 *		"CID2": [30, 40],
+	 *		"CID3": [50, 60]
+	 *	}
+	 * }";
+	 */
 	string body = "{\"" + ueid + "\": {";
 	for (int i = 1; i <= 3; i++) {
 		int down = rand() % 100;
@@ -91,8 +60,8 @@ void prediction_callback(struct unimsg_shm_desc desc)
 	memcpy(desc.addr, body.c_str(), body.size());
 	desc.size = body.size();
 
-	cout << "[QP] Sending a message to TS, length=" << desc.size << "\n";
-	cout << "[QP] Message body " << body << endl;
+	// cout << "[QP] Sending a message to TS, length=" << desc.size << "\n";
+	// cout << "[QP] Message body " << body << endl;
 
 	int rc = unimsg_send(sock, &desc, 0);
 	if (rc) {
@@ -124,7 +93,7 @@ int main(int argc, char *argv[])
 		exit(1);
 	}
 
-	printf("Waiting for TS connection\n");
+	cout << "[QP] Waiting for TS connection\n";
 
 	struct unimsg_sock *tmp_sock;
 	rc = unimsg_accept(sock, &tmp_sock, 0);
@@ -134,19 +103,22 @@ int main(int argc, char *argv[])
 		exit(1);
 	}
 
-	printf("TS connected\n");
+	cout << "[QP] TS connected\n";
 
 	unimsg_close(sock);
 	sock = tmp_sock;
 
-	struct unimsg_shm_desc desc;
-	rc = unimsg_recv(sock, &desc, 0);
-	if (rc) {
-		fprintf(stderr, "Error receiving desc: %s\n", strerror(-rc));
-		exit(1);
-	}
+	for (int i = 0; i < ITERATIONS; i++) {
+		struct unimsg_shm_desc desc;
+		rc = unimsg_recv(sock, &desc, 0);
+		if (rc) {
+			fprintf(stderr, "Error receiving desc: %s\n",
+				strerror(-rc));
+			exit(1);
+		}
 
-	prediction_callback(desc);
+		prediction_callback(desc);
+	}
 
 	unimsg_close(sock);
 

@@ -1,5 +1,5 @@
-UK_ROOT ?= $(PWD)/../../../unikraft
-UK_LIBS ?= $(PWD)/../../../libs
+UK_ROOT ?= $(PWD)/../../../../unikraft
+UK_LIBS ?= $(PWD)/../../../../libs
 LIBS := $(UK_LIBS)/lib-unimsg:$(UK_LIBS)/lib-musl
 
 all:

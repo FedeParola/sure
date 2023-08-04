@@ -1,27 +1,27 @@
 #include <iostream>
+#include <netinet/in.h>
 #include <rapidjson/document.h>
 #include <rapidjson/reader.h>
 #include <rapidjson/schema.h>
 #include <rapidjson/stringbuffer.h>
 #include <rapidjson/writer.h>
 #include <string.h>
-#include <thread>
-#include <unimsg/net.h>
 #include <unistd.h>
 
 #define PORT 4580
 #define ITERATIONS 20
+#define MAX_MSG_SIZE 4096
 
 using namespace rapidjson;
 using namespace std;
 
-static struct unimsg_sock *sock;
+static int sock;
 
-void prediction_callback(struct unimsg_shm_desc desc)
+void prediction_callback(char *msg, ssize_t size)
 {
-	string json ((char *)desc.addr, desc.size);
+	string json (msg, size);
 
-	// cout << "[QP] Prediction Callback got a message, length=" << desc.size
+	// cout << "[QP] Prediction Callback got a message, length=" << size
 	//      << "\n";
 	// cout << "[QP] Payload is " << json << endl;
 
@@ -56,71 +56,66 @@ void prediction_callback(struct unimsg_shm_desc desc)
 		}
 	}
 
-	/* TODO: evaluate building payload in place */
-	memcpy(desc.addr, body.c_str(), body.size());
-	desc.size = body.size();
-
-	// cout << "[QP] Sending a message to TS, length=" << desc.size << "\n";
+	// cout << "[QP] Sending a message to TS, length=" << size << "\n";
 	// cout << "[QP] Message body " << body << endl;
 
-	int rc = unimsg_send(sock, &desc, 0);
-	if (rc) {
-		fprintf(stderr, "Error sending desc: %s\n", strerror(-rc));
+	if (send(sock, body.c_str(), body.size(), 0) != body.size()) {
+		fprintf(stderr, "Error sending message: %s\n", strerror(errno));
 		exit(1);
 	}
 }
 
 int main(int argc, char *argv[])
 {
-	int rc;
+	char msg[MAX_MSG_SIZE];
 
-	rc = unimsg_socket(&sock);
-	if (rc) {
-		fprintf(stderr, "Error creating socket: %s\n", strerror(-rc));
+	sock = socket(AF_INET, SOCK_STREAM, 0);
+	if (sock < 0) {
+		fprintf(stderr, "Error creating socket: %s\n", strerror(errno));
 		exit(1);
 	}
 
-	rc = unimsg_bind(sock, PORT);
-	if (rc) {
-		fprintf(stderr, "Error binding to port %d: %s\n", PORT,
-			strerror(-rc));
+	struct sockaddr_in addr;
+	addr.sin_family = AF_INET;
+	addr.sin_addr.s_addr = htonl(0x7f000001);
+	addr.sin_port = htons(PORT);
+	if (bind(sock, (struct sockaddr *)&addr, sizeof(addr))) {
+		fprintf(stderr, "Error binding: %s\n", strerror(errno));
 		exit(1);
 	}
 
-	rc = unimsg_listen(sock);
-	if (rc) {
-		fprintf(stderr, "Error listening: %s\n", strerror(-rc));
+	if (listen(sock, 10)) {
+		fprintf(stderr, "Error listening: %s\n", strerror(errno));
 		exit(1);
 	}
 
 	cout << "[QP] Waiting for TS connection\n";
 
-	struct unimsg_sock *tmp_sock;
-	rc = unimsg_accept(sock, &tmp_sock, 0);
-	if (rc) {
+	int cs;
+	cs = accept(sock, NULL, NULL);
+	if (cs < 0) {
 		fprintf(stderr, "Error accepting connection: %s\n",
-			strerror(-rc));
+			strerror(errno));
 		exit(1);
 	}
 
 	cout << "[QP] TS connected\n";
 
-	unimsg_close(sock);
-	sock = tmp_sock;
+	close(sock);
+	sock = cs;
 
 	for (int i = 0; i < ITERATIONS; i++) {
-		struct unimsg_shm_desc desc;
-		rc = unimsg_recv(sock, &desc, 0);
-		if (rc) {
-			fprintf(stderr, "Error receiving desc: %s\n",
-				strerror(-rc));
+		ssize_t size = recv(sock, msg, sizeof(msg), 0);
+		if (size <= 0) {
+			fprintf(stderr, "Error receiving message: %s\n",
+				strerror(errno));
 			exit(1);
 		}
 
-		prediction_callback(desc);
+		prediction_callback(msg, size);
 	}
 
-	unimsg_close(sock);
+	close(sock);
 
 	return 0;
 }

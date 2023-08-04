@@ -1,5 +1,6 @@
 #include <iostream>
 #include <map>
+#include <netinet/in.h>
 #include <rapidjson/document.h>
 #include <rapidjson/prettywriter.h>
 #include <rapidjson/reader.h>
@@ -11,7 +12,6 @@
 #include <stdio.h>
 #include <string>
 #include <string.h>
-#include <unimsg/net.h>
 #include <unistd.h>
 #include <unordered_map>
 #include <vector>
@@ -19,13 +19,16 @@
 #define PORT 4560
 #define QP_ADDR 1
 #define QP_PORT 4580
-#define RC_ADDR 2
+#define RC_ADDR 0x7f000001 /* 127.0.0.1 */
 #define RC_PORT 5000
 #define ITERATIONS 20
+#define MAX_MSG_SIZE 4096
 
 static int downlink_threshold = 0;  // A1 policy type 20008 (in percentage)
-static struct unimsg_sock *ad_sock;
-static struct unimsg_sock *qp_sock;
+static int ad_sock;
+static int qp_sock;
+static unsigned it = 0;
+static unsigned long total_latency = 0;
 
 using namespace rapidjson;
 using namespace std;
@@ -122,7 +125,6 @@ struct AnomalyHandler : public BaseReaderHandler<UTF8<>, AnomalyHandler> {
 struct rest_resp {
 	unsigned status_code;
 	char *body;
-	unimsg_shm_desc desc;
 };
 
 static char post_template[] = "POST %s HTTP/1.1\r\n" /* url */
@@ -133,65 +135,60 @@ static char post_template[] = "POST %s HTTP/1.1\r\n" /* url */
 			      "\r\n"
 			      "%s"; /* body */
 
-static struct rest_resp do_post(__u32 addr, __u16 port, string url, string body)
+static struct rest_resp do_post(uint32_t addr, uint16_t port, string url,
+				string body)
 {
-	struct unimsg_sock *rc_sock;
-	struct unimsg_shm_desc desc;
+	int rc_sock;
+	char msg[MAX_MSG_SIZE];
 	int rc;
 
-	rc = unimsg_socket(&rc_sock);
-	if (rc) {
-		fprintf(stderr, "Error creating socket: %s\n", strerror(-rc));
+	rc_sock = socket(AF_INET, SOCK_STREAM, 0);
+	if (rc_sock < 0) {
+		fprintf(stderr, "Error creating socket: %s\n", strerror(errno));
 		exit(1);
 	}
 
-	rc = unimsg_connect(rc_sock, addr, port);
-	if (rc) {
-		fprintf(stderr, "Error connecting to RC: %s\n", strerror(-rc));
+	struct sockaddr_in saddr;
+	saddr.sin_family = AF_INET;
+	saddr.sin_addr.s_addr = htonl(addr);
+	saddr.sin_port = htons(port);
+	if (connect(rc_sock, (struct sockaddr *)&saddr, sizeof(saddr))) {
+		fprintf(stderr, "Error connecting to RC: %s\n",
+			strerror(errno));
 		exit(1);
 	}
 
-	rc = unimsg_buffer_get(&desc);
-	if (rc) {
-		fprintf(stderr, "Error getting buffer: %s\n", strerror(-rc));
-		exit(1);
+	sprintf(msg, post_template, url.c_str(), addr, port, body.size(),
+		body.c_str());
+
+	if (send(rc_sock, msg, strlen(msg), 0) != strlen(msg)) {
+		fprintf(stderr, "Error sending message: %s\n",
+			strerror(errno));
+		exit(EXIT_FAILURE);
 	}
 
-	sprintf((char *)desc.addr, post_template, url.c_str(), addr, port,
-		body.size(), body.c_str());
-	desc.size = strlen((char *)desc.addr);
-
-	rc = unimsg_send(rc_sock, &desc, 0);
-	if (rc) {
-		fprintf(stderr, "Error sending desc: %s\n", strerror(-rc));
+	rc = recv(rc_sock, msg, sizeof(msg), 0);
+	if (rc <= 0) {
+		fprintf(stderr, "Error receiving desc: %s\n", strerror(errno));
 		exit(1);
 	}
+	msg[rc] = 0;
 
-	rc = unimsg_recv(rc_sock, &desc, 0);
-	if (rc) {
-		fprintf(stderr, "Error receiving desc: %s\n", strerror(-rc));
-		exit(1);
-	}
-
-	unimsg_close(rc_sock);
+	close(rc_sock);
 
 	struct rest_resp resp;
-	if (sscanf((char *)desc.addr, "HTTP/1.1 %u OK", &resp.status_code)
-	    == EOF) {
-		fprintf(stderr, "Received unexpected response: %s\n",
-			(char *)desc.addr);
+	if (sscanf(msg, "HTTP/1.1 %u OK", &resp.status_code) == EOF) {
+		fprintf(stderr, "Received unexpected response: %s\n", msg);
 		exit(1);
 	}
 
 	/* Locate body */
-	resp.body = strstr((char *)desc.addr, "\r\n\r\n");
+	resp.body = strstr(msg, "\r\n\r\n");
 	if (!resp.body) {
-		fprintf(stderr, "Received response without payload:\n%s",
-			(char *)desc.addr);
+		fprintf(stderr, "Received response without payload:\n%s", msg);
 		exit(1);
 	}
 	resp.body += 4; /* Skip newlines */
-	resp.desc = desc;
 
 	return resp;
 }
@@ -250,7 +247,25 @@ void send_rest_control_request(string ue_id, string serving_cell_id,
 	// cout << "[INFO] Sending a HandOff CONTROL message\n";
 	// cout << "[INFO] HandOff request is " << msg << endl;
 
+	// struct timespec start, stop;
+	// if (clock_gettime(CLOCK_MONOTONIC, &start)) {
+	// 	cerr << "[ERROR] Cannot get time\n";
+	// 	exit(EXIT_FAILURE);
+	// }
+
 	struct rest_resp resp = do_post(RC_ADDR, RC_PORT, "/api/echo", msg);
+
+	// if (clock_gettime(CLOCK_MONOTONIC, &stop)) {
+	// 	cerr << "[ERROR] Cannot get time\n";
+	// 	exit(EXIT_FAILURE);
+	// }
+	// unsigned long latency = (stop.tv_sec - start.tv_sec) * 1000000000
+	// 			+ stop.tv_nsec - start.tv_nsec;
+
+	// cout << "[TS] POST " << it << " took " << latency << " ns\n";
+
+	// if (it++ > 0)
+	// 	total_latency += latency;
 
 	if (resp.status_code == 200) {
 		/* ============= DO SOMETHING USEFUL HERE =============
@@ -267,19 +282,15 @@ void send_rest_control_request(string ue_id, string serving_cell_id,
 		cout << "[ERROR] Unexpected HTTP code " << resp.status_code
 		     << "\n[ERROR] HTTP payload is " << resp.body << endl;
 	}
-
-	unimsg_buffer_put(&resp.desc);
 }
 
-void prediction_callback(struct unimsg_shm_desc desc)
+void prediction_callback(char *msg, ssize_t size)
 {
-	string json ((char *)desc.addr, desc.size);
+	string json (msg, size);
 
-	// cout << "[INFO] Prediction Callback got a message, length=" << desc.size
+	// cout << "[INFO] Prediction Callback got a message, length=" << size
 	//      << "\n";
 	// cout << "[INFO] Payload is " << json << endl;
-
-	unimsg_buffer_put(&desc);
 
 	PredictionHandler handler;
 	try {
@@ -341,15 +352,6 @@ void prediction_callback(struct unimsg_shm_desc desc)
 
 void send_prediction_request(vector<string> ues_to_predict)
 {
-	struct unimsg_shm_desc desc;
-	int rc;
-
-	rc = unimsg_buffer_get(&desc);
-	if (rc) {
-		fprintf(stderr, "Error getting buffer: %s\n", strerror(-rc));
-		exit(1);
-	}
-
 	string ues_list = "[";
 	for (unsigned long i = 0; i < ues_to_predict.size(); i++) {
 		if (i == ues_to_predict.size() - 1) {
@@ -363,26 +365,25 @@ void send_prediction_request(vector<string> ues_to_predict)
 
 	string message_body = "{\"UEPredictionSet\": " + ues_list + "}";
 
-	/* TODO: evaluate building payload in place */
-	memcpy(desc.addr, message_body.c_str(), message_body.size());
-	desc.size = message_body.size();
+	// cout << "[INFO] Prediction Request length=" << message_body.size()
+	//      << ", payload=" << message_body << endl;
 
-	// cout << "[INFO] Prediction Request length=" << desc.size << ", payload="
-	//      << message_body << endl;
-
-	rc = unimsg_send(qp_sock, &desc, 0);
-	if (rc) {
-		fprintf(stderr, "Error sending desc: %s\n", strerror(-rc));
+	if (send(qp_sock, message_body.c_str(), message_body.size(), 0)
+	    != message_body.size()) {
+		fprintf(stderr, "Error sending message: %s\n", strerror(errno));
 		exit(1);
 	}
 
-	rc = unimsg_recv(qp_sock, &desc, 0);
-	if (rc) {
-		fprintf(stderr, "Error receiving desc: %s\n", strerror(-rc));
+	char msg[MAX_MSG_SIZE];
+	ssize_t size = recv(qp_sock, msg, sizeof(msg), 0);
+	if (size <= 0) {
+		fprintf(stderr, "Error receiving message: %s\n",
+			strerror(errno));
 		exit(1);
 	}
+	msg[size] = 0;
 
-	prediction_callback(desc);
+	prediction_callback(msg, size);
 }
 
 /* This function works with Anomaly Detection(AD) xApp. It is invoked when
@@ -390,12 +391,11 @@ void send_prediction_request(vector<string> ues_to_predict)
  * xApp, sends an ACK with same UEID as payload to AD xApp, and sends a
  * prediction request to the QP Driver xApp.
  */
-void ad_callback(struct unimsg_shm_desc desc)
+void ad_callback(char *msg, ssize_t size)
 {
-	string json ((char *)desc.addr, desc.size);
+	string json (msg, size);
 
-	// cout << "[INFO] AD Callback got a message, length=" << desc.size
-	//      << "\n";
+	// cout << "[INFO] AD Callback got a message, length=" << msg << "\n";
 	// cout << "[INFO] Payload is " << json << "\n";
 
 	AnomalyHandler handler;
@@ -406,79 +406,85 @@ void ad_callback(struct unimsg_shm_desc desc)
 	send_prediction_request(handler.prediction_ues);
 
 	/* Send the same message back as ACK */
-	desc.size = 0;
-	int rc = unimsg_send(ad_sock, &desc, 0);
-	if (rc) {
-		fprintf(stderr, "Error receiving desc: %s\n", strerror(-rc));
+	if (send(ad_sock, msg, size, 0) != size) {
+		fprintf(stderr, "Error sending message: %s\n", strerror(errno));
 		exit(1);
 	}
 }
 
 int main(int argc, char *argv[])
 {
-	struct unimsg_sock *lsock;
+	int lsock;
 	int rc;
+	char msg[MAX_MSG_SIZE];
 
-	rc = unimsg_socket(&lsock);
-	if (rc) {
-		fprintf(stderr, "Error creating socket: %s\n", strerror(-rc));
+	lsock = socket(AF_INET, SOCK_STREAM, 0);
+	if (lsock < 0) {
+		fprintf(stderr, "Error creating socket: %s\n", strerror(errno));
 		exit(1);
 	}
 
-	rc = unimsg_bind(lsock, PORT);
-	if (rc) {
-		fprintf(stderr, "Error binding to port %d: %s\n", PORT,
-			strerror(-rc));
+	struct sockaddr_in addr;
+	addr.sin_family = AF_INET;
+	addr.sin_addr.s_addr = htonl(0x7f000001);
+	addr.sin_port = htons(PORT);
+	if (bind(lsock, (struct sockaddr *)&addr, sizeof(addr))) {
+		fprintf(stderr, "Error binding: %s\n", strerror(errno));
 		exit(1);
 	}
 
-	rc = unimsg_listen(lsock);
-	if (rc) {
-		fprintf(stderr, "Error listening: %s\n", strerror(-rc));
+	if (listen(lsock, 10)) {
+		fprintf(stderr, "Error listening: %s\n", strerror(errno));
 		exit(1);
 	}
 
 	cout << "[INFO] Waiting for AD connection\n";
 
-	rc = unimsg_accept(lsock, &ad_sock, 0);
-	if (rc) {
+	ad_sock = accept(lsock, NULL, NULL);
+	if (ad_sock < 0) {
 		fprintf(stderr, "Error accepting connection: %s\n",
-			strerror(-rc));
+			strerror(errno));
 		exit(1);
 	}
 
-	unimsg_close(lsock);
+	close(lsock);
 
 	cout << "[INFO] AD connected\n";
 
-	rc = unimsg_socket(&qp_sock);
-	if (rc) {
-		fprintf(stderr, "Error creating socket: %s\n", strerror(-rc));
+	qp_sock = socket(AF_INET, SOCK_STREAM, 0);
+	if (qp_sock < 0) {
+		fprintf(stderr, "Error creating socket: %s\n", strerror(errno));
 		exit(1);
 	}
 
-	rc = unimsg_connect(qp_sock, QP_ADDR, QP_PORT);
-	if (rc) {
-		fprintf(stderr, "Error connecting to QP: %s\n", strerror(-rc));
+	addr.sin_family = AF_INET;
+	addr.sin_addr.s_addr = htonl(0x7f000001);
+	addr.sin_port = htons(QP_PORT);
+	if (connect(qp_sock, (struct sockaddr *)&addr, sizeof(addr))) {
+		fprintf(stderr, "Error connecting to QP: %s\n",
+			strerror(errno));
 		exit(1);
 	}
 
 	cout << "[INFO] Connection to QP established\n";
 
 	for (int i = 0; i < ITERATIONS; i++) {
-		struct unimsg_shm_desc desc;
-		rc = unimsg_recv(ad_sock, &desc, 0);
-		if (rc) {
-			fprintf(stderr, "Error receiving desc: %s\n",
-				strerror(-rc));
+		ssize_t size = recv(ad_sock, msg, sizeof(msg), 0);
+		if (size <= 0) {
+			fprintf(stderr, "Error receiving message: %s\n",
+				strerror(errno));
 			exit(1);
 		}
+		msg[size] = 0;
 
-		ad_callback(desc);
+		ad_callback(msg, size);
 	}
 
-	unimsg_close(qp_sock);
-	unimsg_close(ad_sock);
+	close(qp_sock);
+	close(ad_sock);
+
+	// cout << "[TS] Average POST latency (excluding 1st iteration) "
+	//      << (total_latency / (ITERATIONS - 1)) << " ns\n";
 
 	return 0;
 }

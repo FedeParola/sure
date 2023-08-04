@@ -1,5 +1,4 @@
 #include <iostream>
-#include <memory>
 #include <string.h>
 #include <thread>
 #include <unimsg/net.h>

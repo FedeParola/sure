@@ -13,7 +13,17 @@
 #define CLIENT_VM_ID 1
 #define ERR_CLOSE(s) ({ unimsg_close(s); exit(1); })
 #define ERR_PUT(desc, s) ({ unimsg_buffer_put(&(desc)); ERR_CLOSE(s); })
+#ifdef ADDITIONAL_STATS
+#define STORE_TIME(var) ({ var = ukplat_monotonic_clock(); })
+#else
+#define STORE_TIME(var)
+#endif
 
+#ifdef ADDITIONAL_STATS
+static unsigned long send_time;
+static unsigned long recv_time;
+static unsigned long iterations_count;
+#endif
 static unsigned opt_iterations = 0;
 static unsigned opt_size = DEFAULT_SIZE;
 static int opt_client = 0;
@@ -104,6 +114,9 @@ static void do_client_rr(struct unimsg_sock *s, unsigned long val)
 	int rc;
 	struct unimsg_shm_desc desc;
 	unsigned long *msg;
+#ifdef ADDITIONAL_STATS
+	unsigned long start, stop;
+#endif
 
 	rc = unimsg_buffer_get(&desc); 
 	if (rc) {
@@ -117,20 +130,28 @@ static void do_client_rr(struct unimsg_sock *s, unsigned long val)
 		msg[j] = val;
 	desc.size = opt_size;
 
-	if (opt_busy_poll)
-		while ((rc = unimsg_send(s, &desc, 1)) == -EAGAIN);
-	else
-		rc = unimsg_send(s, &desc, 0);
+	do {
+		STORE_TIME(start);
+		rc = unimsg_send(s, &desc, opt_busy_poll);
+		STORE_TIME(stop);
+	} while (opt_busy_poll && rc == -EAGAIN);
 	if (rc) {
 		fprintf(stderr, "Error sending buffer %p: %s\n", desc.addr,
 			strerror(-rc));
 		ERR_PUT(desc, s);
 	}
 
-	if (opt_busy_poll)
-		while ((rc = unimsg_recv(s, &desc, 1)) == -EAGAIN);
-	else
-		rc = unimsg_recv(s, &desc, 0);
+#ifdef ADDITIONAL_STATS
+	if (++iterations_count > opt_warmup)
+		send_time += stop - start;
+#endif
+
+
+	do {
+		STORE_TIME(start);
+		rc = unimsg_recv(s, &desc, opt_busy_poll);
+		STORE_TIME(stop);
+	} while (opt_busy_poll && rc == -EAGAIN);
 	if (rc) {
 		fprintf(stderr, "Error receiving desc: %s\n", strerror(-rc));
 		ERR_CLOSE(s);
@@ -140,6 +161,11 @@ static void do_client_rr(struct unimsg_sock *s, unsigned long val)
 		fprintf(stderr, "Unexpected message size %u\n", desc.size);
 		ERR_PUT(desc, s);
 	}
+
+#ifdef ADDITIONAL_STATS
+	if (iterations_count > opt_warmup)
+		recv_time += stop - start;
+#endif
 
 	msg = desc.addr;
 	for (unsigned j = 0; j < opt_size / 8; j++)
@@ -198,11 +224,18 @@ static void client(struct unimsg_sock *s)
 	if (!opt_delay)
 		total = ukplat_monotonic_clock() - start;
 
+	unimsg_close(s);
+	printf("Socket closed\n");
+
 	printf("total-time=%lu\nrr-latency=%lu\n", total,
 	       total / opt_iterations);
 
-	unimsg_close(s);
-	printf("Socket closed\n");
+#ifdef ADDITIONAL_STATS
+	printf("Average send time %lu ns\n",
+	       send_time / (iterations_count - opt_warmup));
+	printf("Average recv time %lu ns\n",
+	       recv_time / (iterations_count - opt_warmup));
+#endif
 }
 
 static void server(struct unimsg_sock *s)
@@ -246,11 +279,15 @@ static void server(struct unimsg_sock *s)
 
 	/* Handle requests until the connection is closed by the client */
 	for (;;) {
-		if (opt_busy_poll)
-			while ((rc = unimsg_recv(s, &desc, 1)) == -EAGAIN);
-		else
-			rc = unimsg_recv(s, &desc, 0);
+#ifdef ADDITIONAL_STATS
+		unsigned long start, stop;
+#endif
 
+		do {
+			STORE_TIME(start);
+			rc = unimsg_recv(s, &desc, opt_busy_poll);
+			STORE_TIME(stop);
+		} while (opt_busy_poll && rc == -EAGAIN);
 		if (rc == -ECONNRESET) {
 			break;
 		} else if (rc) {
@@ -263,11 +300,11 @@ static void server(struct unimsg_sock *s)
 		for (unsigned j = 0; j < desc.size / 8; j++)
 			msg[j]++;
 
-		if (opt_busy_poll)
-			while ((rc = unimsg_send(s, &desc, 1)) == -EAGAIN);
-		else
-			rc = unimsg_send(s, &desc, 0);
-
+		do {
+			STORE_TIME(start);
+			rc = unimsg_send(s, &desc, opt_busy_poll);
+			STORE_TIME(stop);
+		} while (opt_busy_poll && rc == -EAGAIN);
 		if (rc == -ECONNRESET) {
 			unimsg_buffer_put(&desc);
 			break;
@@ -276,12 +313,22 @@ static void server(struct unimsg_sock *s)
 				strerror(-rc));
 			ERR_PUT(desc, s);
 		}
+
+#ifdef ADDITIONAL_STATS
+		send_time += stop - start;
+		iterations_count++;
+#endif
 	}
 
 	printf("Test terminated\n");
 
 	unimsg_close(s);
 	printf("Socket closed\n");
+
+#ifdef ADDITIONAL_STATS
+	printf("Average send time %lu ns\n", send_time / iterations_count);
+	printf("Average recv time %lu ns\n", recv_time / iterations_count);
+#endif
 }
 
 int main(int argc, char *argv[])

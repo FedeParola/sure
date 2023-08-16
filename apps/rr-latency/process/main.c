@@ -27,7 +27,17 @@
 #define SOCKMAP_PATH "/sys/fs/bpf/sockmap"
 #define ERR_CLOSE(s) ({ close(s); exit(1); })
 #define ERR_UNPIN(s) ({ if (opt_sk_msg) unlink(SOCKMAP_PATH); ERR_CLOSE(s); })
+#ifdef ADDITIONAL_STATS
+#define STORE_TIME(var) ({ clock_gettime(CLOCK_MONOTONIC, &var); })
+#else
+#define STORE_TIME(var)
+#endif
 
+#ifdef ADDITIONAL_STATS
+static unsigned long send_time;
+static unsigned long recv_time;
+static unsigned long iterations_count;
+#endif
 static unsigned opt_iterations = 0;
 static unsigned opt_size = DEFAULT_SIZE;
 static int opt_client = 0;
@@ -138,28 +148,49 @@ static void parse_command_line(int argc, char **argv)
 static void do_client_rr(int s, unsigned long val)
 {
 	ssize_t size;
+#ifdef ADDITIONAL_STATS
+	struct timespec start, stop;
+#endif
 
 	unsigned long msg[MAX_MSG_SIZE / sizeof(unsigned long)];
 
 	for (unsigned j = 0; j < opt_size / 8; j++)
 		msg[j] = val;
 
-	do
+	do {
+		STORE_TIME(start);
 		size = send(s, msg, opt_size, 0);
-	while (size < 0 && opt_busy_poll && errno == EAGAIN);
+		STORE_TIME(stop);
+	} while (size < 0 && opt_busy_poll && errno == EAGAIN);
 	if (size != opt_size) {
 		fprintf(stderr, "Error sending message: %s\n", strerror(errno));
 		ERR_CLOSE(s);
 	}
 
-	do
+#ifdef ADDITIONAL_STATS
+	if (++iterations_count > opt_warmup) {
+		send_time += (stop.tv_sec - start.tv_sec) * 1000000000
+			     + stop.tv_nsec - start.tv_nsec;
+	}
+#endif
+
+	do {
+		STORE_TIME(start);
 		size = recv(s, msg, sizeof(msg), 0);
-	while (size < 0 && opt_busy_poll && errno == EAGAIN);
+		STORE_TIME(stop);
+	} while (size < 0 && opt_busy_poll && errno == EAGAIN);
 	if (size != opt_size) {
 		fprintf(stderr, "Error receiving message: %s\n",
 			strerror(errno));
 		ERR_CLOSE(s);
 	}
+
+#ifdef ADDITIONAL_STATS
+	if (iterations_count > opt_warmup) {
+		recv_time += (stop.tv_sec - start.tv_sec) * 1000000000
+			     + stop.tv_nsec - start.tv_nsec;
+	}
+#endif
 
 	for (unsigned j = 0; j < opt_size / 8; j++)
 		if (msg[j] != val + 1) {
@@ -276,11 +307,17 @@ static void client(int s)
 			+ stop.tv_nsec - start.tv_nsec;
 	}
 
-	printf("total-time=%lu\nrr-latency=%lu\n", total,
-	       total / opt_iterations);
-
 	close(s);
 	printf("Socket closed\n");
+
+	printf("total-time=%lu\nrr-latency=%lu\n", total,
+	       total / opt_iterations);
+#ifdef ADDITIONAL_STATS
+	printf("Average send time %lu ns\n",
+	       send_time / (iterations_count - opt_warmup));
+	printf("Average recv time %lu ns\n",
+	       recv_time / (iterations_count - opt_warmup));
+#endif
 }
 
 static void server(int s, char *path)
@@ -410,10 +447,15 @@ static void server(int s, char *path)
 	/* Handle requests until the connection is closed by the client */
 	for (;;) {
 		ssize_t rsize, ssize;
+#ifdef ADDITIONAL_STATS
+		struct timespec start, stop;
+#endif
 
-		do
+		do {
+			STORE_TIME(start);
 			rsize = recv(s, msg, sizeof(msg), 0);
-		while (rsize < 0 && opt_busy_poll && errno == EAGAIN);
+			STORE_TIME(stop);
+		} while (rsize < 0 && opt_busy_poll && errno == EAGAIN);
 		if (rsize == 0) {
 			break;
 		} else if (rsize < 0) {
@@ -422,17 +464,30 @@ static void server(int s, char *path)
 			ERR_UNPIN(s);
 		}
 
+#ifdef ADDITIONAL_STATS
+		recv_time += (stop.tv_sec - start.tv_sec) * 1000000000
+			     + stop.tv_nsec - start.tv_nsec;
+#endif
+
 		for (unsigned j = 0; j < rsize / 8; j++)
 			msg[j]++;
 
-		do
+		do {
+			STORE_TIME(start);
 			ssize = send(s, msg, rsize, 0);
-		while (ssize < 0 && opt_busy_poll && errno == EAGAIN);
+			STORE_TIME(stop);
+		} while (ssize < 0 && opt_busy_poll && errno == EAGAIN);
 		if (ssize != rsize) {
 			fprintf(stderr, "Error sending message: %s\n",
 				strerror(errno));
 			ERR_UNPIN(s);
 		}
+
+#ifdef ADDITIONAL_STATS
+		send_time += (stop.tv_sec - start.tv_sec) * 1000000000
+			     + stop.tv_nsec - start.tv_nsec;
+		iterations_count++;
+#endif
 	}
 
 	printf("Test terminated\n");
@@ -447,6 +502,11 @@ static void server(int s, char *path)
 		else
 			printf("Sockmap unpinned\n");
 	}
+
+#ifdef ADDITIONAL_STATS
+	printf("Average send time %lu ns\n", send_time / iterations_count);
+	printf("Average recv time %lu ns\n", recv_time / iterations_count);
+#endif
 }
 
 int main(int argc, char *argv[])

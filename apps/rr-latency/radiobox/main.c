@@ -229,10 +229,7 @@ static void server(struct unimsg_sock *s)
 	printf("Socket listening\n");
 
 	struct unimsg_sock *cs;
-	if (opt_busy_poll)
-		while ((rc = unimsg_accept(s, &cs, 1)) == -EAGAIN);
-	else
-		rc = unimsg_accept(s, &cs, 0);
+	rc = unimsg_accept(s, &cs, 0);
 	if (rc) {
 		fprintf(stderr, "Error accepting connection: %s\n",
 			strerror(-rc));

@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <time.h>
@@ -30,6 +31,7 @@
 static unsigned opt_iterations = 0;
 static unsigned opt_size = DEFAULT_SIZE;
 static int opt_client = 0;
+static int opt_busy_poll = 0;
 static int opt_unix = 0;
 static int opt_sk_msg = 0;
 static int opt_server_addr = SERVER_ADDR;
@@ -39,6 +41,7 @@ static struct option long_options[] = {
 	{"iterations", required_argument, 0, 'i'},
 	{"size", required_argument, 0, 's'},
 	{"client", optional_argument, 0, 'c'},
+	{"busy-poll", optional_argument, 0, 'b'},
 	{"unix", optional_argument, 0, 'u'},
 	{"sk-msg", optional_argument, 0, 'm'},
 	{"localhost", optional_argument, 0, 'l'},
@@ -55,6 +58,7 @@ static void usage(const char *prog)
 		"  -i, --iterations	Number of requests-responses to exchange\n"
 		"  -s, --size		Size of the message in bytes (default %u)\n"
 		"  -c, --client		Behave as client (default is server)\n"
+		"  -b, --busy-poll	Use busy polling (non-blocking sockets)\n"
 		"  -u, --unix		Use AF_UNIX sockets\n"
 		"  -m, --sk-msg		Use SK_MSG acceleration (TCP sockets only)\n"
 		"  -l, --localhost	Run test on localhost\n"
@@ -70,7 +74,7 @@ static void parse_command_line(int argc, char **argv)
 	int option_index, c;
 
 	for (;;) {
-		c = getopt_long(argc, argv, "i:s:cumlw:d:", long_options,
+		c = getopt_long(argc, argv, "i:s:cbumlw:d:", long_options,
 				&option_index);
 		if (c == -1)
 			break;
@@ -90,6 +94,9 @@ static void parse_command_line(int argc, char **argv)
 			break;
 		case 'c':
 			opt_client = 1;
+			break;
+		case 'b':
+			opt_busy_poll = 1;
 			break;
 		case 'u':
 			opt_unix = 1;
@@ -130,17 +137,25 @@ static void parse_command_line(int argc, char **argv)
 
 static void do_client_rr(int s, unsigned long val)
 {
+	ssize_t size;
+
 	unsigned long msg[MAX_MSG_SIZE / sizeof(unsigned long)];
 
 	for (unsigned j = 0; j < opt_size / 8; j++)
 		msg[j] = val;
 
-	if (send(s, msg, opt_size, 0) != opt_size) {
+	do
+		size = send(s, msg, opt_size, 0);
+	while (size < 0 && opt_busy_poll && errno == EAGAIN);
+	if (size != opt_size) {
 		fprintf(stderr, "Error sending message: %s\n", strerror(errno));
 		ERR_CLOSE(s);
 	}
 
-	if (recv(s, msg, sizeof(msg), 0) != opt_size) {
+	do
+		size = recv(s, msg, sizeof(msg), 0);
+	while (size < 0 && opt_busy_poll && errno == EAGAIN);
+	if (size != opt_size) {
 		fprintf(stderr, "Error receiving message: %s\n",
 			strerror(errno));
 		ERR_CLOSE(s);
@@ -211,6 +226,15 @@ static void client(int s)
 		printf("Socket added to sockmap\n");
 
 		sleep(1); /* Make sure server added his entry in the sockmap */
+	}
+
+	if (opt_busy_poll) {
+		int val = 1;
+		if (ioctl(s, FIONBIO, &val)) {
+			fprintf(stderr, "Error setting nonblocking mode: %s\n",
+				strerror(errno));
+			ERR_CLOSE(s);
+		}
 	}
 
 	if (opt_warmup) {
@@ -354,6 +378,15 @@ static void server(int s, char *path)
 	s = cs;
 	printf("Listening socket closed\n");
 
+	if (opt_busy_poll) {
+		int val = 1;
+		if (ioctl(s, FIONBIO, &val)) {
+			fprintf(stderr, "Error setting nonblocking mode: %s\n",
+				strerror(errno));
+			ERR_CLOSE(s);
+		}
+	}
+
 	if (opt_sk_msg) {
 		struct conn_id cid = {
 			.raddr = opt_server_addr,
@@ -376,19 +409,26 @@ static void server(int s, char *path)
 	
 	/* Handle requests until the connection is closed by the client */
 	for (;;) {
-		ssize_t size = recv(s, msg, sizeof(msg), 0);
-		if (size == 0) {
+		ssize_t rsize, ssize;
+
+		do
+			rsize = recv(s, msg, sizeof(msg), 0);
+		while (rsize < 0 && opt_busy_poll && errno == EAGAIN);
+		if (rsize == 0) {
 			break;
-		} else if (size < 0) {
+		} else if (rsize < 0) {
 			fprintf(stderr, "Error receiving message: %s\n",
 				strerror(errno));
 			ERR_UNPIN(s);
 		}
 
-		for (unsigned j = 0; j < size / 8; j++)
+		for (unsigned j = 0; j < rsize / 8; j++)
 			msg[j]++;
 
-		if (send(s, msg, size, 0) != size) {
+		do
+			ssize = send(s, msg, rsize, 0);
+		while (ssize < 0 && opt_busy_poll && errno == EAGAIN);
+		if (ssize != rsize) {
 			fprintf(stderr, "Error sending message: %s\n",
 				strerror(errno));
 			ERR_UNPIN(s);

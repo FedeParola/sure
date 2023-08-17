@@ -14,7 +14,7 @@
 #define DEFAULT_DELAY 0
 #define SERVER_IP 0x0100000a /* 10.0.0.1, already in nbo */
 #define SERVER_PORT 5000
-#define MAX_MSG_SIZE 4096
+#define MAX_MSG_SIZE 8192
 #define ERR_CLOSE(s) ({ close(s); exit(1); })
 
 static unsigned opt_iterations = 0;

@@ -22,7 +22,7 @@
 #define SERVER_ADDR 0x0100000a /* Already in nbo */
 #define LOCALHOST 0x0100007f /* localhost, already in nbo */
 #define SERVER_PORT 5000
-#define MAX_MSG_SIZE 4096
+#define MAX_MSG_SIZE 8192
 #define SOCKET_PATH "/tmp/rr-latency.sock"
 #define SOCKMAP_PATH "/sys/fs/bpf/sockmap"
 #define ERR_CLOSE(s) ({ close(s); exit(1); })

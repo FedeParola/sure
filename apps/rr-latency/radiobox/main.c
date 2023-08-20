@@ -10,6 +10,7 @@
 #define DEFAULT_DELAY 0
 #define SERVER_VM_ID 0
 #define SERVER_PORT 5000
+#define MAX_MSG_SIZE 8192
 #define CLIENT_VM_ID 1
 #define ERR_CLOSE(s) ({ unimsg_close(s); exit(1); })
 #define ERR_PUT(descs, ndescs, s) ({					\
@@ -115,43 +116,19 @@ static void parse_command_line(int argc, char **argv)
 static void do_client_rr(struct unimsg_sock *s, unsigned long val)
 {
 	int rc;
-	struct unimsg_shm_desc descs[UNIMSG_MAX_DESCS_BULK], *desc;
-	unsigned ndescs = (opt_size - 1) / UNIMSG_SHM_BUFFER_SIZE + 1;
-	unsigned nrecv;
-	unsigned long *msg;
+	unsigned long msg[MAX_MSG_SIZE / sizeof(unsigned long)];
 #ifdef ADDITIONAL_STATS
 	unsigned long start, stop;
 #endif
 
-	rc = unimsg_buffer_get(descs, ndescs); 
-	if (rc) {
-		fprintf(stderr, "Error getting shm buffer: %s\n",
-			strerror(-rc));
-		ERR_CLOSE(s);
-	}
-
-	desc = &descs[0];
-	msg = desc->addr;
-	int available = UNIMSG_SHM_BUFFER_SIZE;
-	for (unsigned i = 0; i < opt_size / 8; i++) {
-		if (available < 8) {
-			desc->size = UNIMSG_SHM_BUFFER_SIZE - available;
-			desc++;
-			available = UNIMSG_SHM_BUFFER_SIZE;
-		}
-		msg[i % UNIMSG_SHM_BUFFER_SIZE] = val;
-		available -= 8;
-	}
-	desc->size = UNIMSG_SHM_BUFFER_SIZE - available;
-
 	do {
 		STORE_TIME(start);
-		rc = unimsg_send(s, descs, ndescs, opt_busy_poll);
+		rc = unimsg_send(s, msg, opt_size, opt_busy_poll);
 		STORE_TIME(stop);
 	} while (opt_busy_poll && rc == -EAGAIN);
 	if (rc) {
-		fprintf(stderr, "Error sending descs: %s\n", strerror(-rc));
-		ERR_PUT(descs, ndescs, s);
+		fprintf(stderr, "Error sending message: %s\n", strerror(-rc));
+		ERR_CLOSE(s);
 	}
 
 #ifdef ADDITIONAL_STATS
@@ -159,47 +136,25 @@ static void do_client_rr(struct unimsg_sock *s, unsigned long val)
 		send_time += stop - start;
 #endif
 
-
+	unsigned long len = sizeof(msg);
 	do {
 		STORE_TIME(start);
-		nrecv = ndescs;
-		rc = unimsg_recv(s, descs, &nrecv, opt_busy_poll);
+		rc = unimsg_recv(s, msg, &len, opt_busy_poll);
 		STORE_TIME(stop);
 	} while (opt_busy_poll && rc == -EAGAIN);
 	if (rc) {
 		fprintf(stderr, "Error receiving descs: %s\n", strerror(-rc));
 		ERR_CLOSE(s);
 	}
-	if (nrecv < ndescs) {
-		fprintf(stderr, "Received unexpected number of descs: %s\n",
-			strerror(-rc));
-		ERR_PUT(descs, nrecv, s);
+	if (len < opt_size) {
+		fprintf(stderr, "Received unexpected message\n");
+		ERR_CLOSE(s);
 	}
 
 #ifdef ADDITIONAL_STATS
 	if (iterations_count > opt_warmup)
 		recv_time += stop - start;
 #endif
-
-	unsigned read = 0;
-	for (unsigned i = 0; i < ndescs; i++) {
-		msg = descs[i].addr;
-		for (unsigned j = 0; j * 8 < descs[i].size; j++) {
-			if (msg[j] != val + 1) {
-				fprintf(stderr, "Received unexpected message "
-					"%lu\n", msg[i]);
-				ERR_PUT(descs, ndescs, s);
-			}
-			read += 8;
-		}
-	}
-
-	if (read != opt_size) {
-		fprintf(stderr, "Unexpected message size %u\n", read);
-		ERR_PUT(descs, ndescs, s);
-	}
-
-	unimsg_buffer_put(descs, ndescs);
 }
 
 static void client(struct unimsg_sock *s)
@@ -265,9 +220,7 @@ static void client(struct unimsg_sock *s)
 static void server(struct unimsg_sock *s)
 {
 	int rc;
-	struct unimsg_shm_desc descs[UNIMSG_MAX_DESCS_BULK];
-	unsigned nrecv;
-	unsigned long *msg;
+	unsigned long msg[MAX_MSG_SIZE / sizeof(unsigned long)];
 
 	printf("I'm the server\n");
 
@@ -307,11 +260,10 @@ static void server(struct unimsg_sock *s)
 #ifdef ADDITIONAL_STATS
 		unsigned long start, stop;
 #endif
-
+		unsigned long len = MAX_MSG_SIZE;
 		do {
 			STORE_TIME(start);
-			nrecv = UNIMSG_MAX_DESCS_BULK;
-			rc = unimsg_recv(s, descs, &nrecv, opt_busy_poll);
+			rc = unimsg_recv(s, msg, &len, opt_busy_poll);
 			STORE_TIME(stop);
 		} while (opt_busy_poll && rc == -EAGAIN);
 		if (rc == -ECONNRESET) {
@@ -322,24 +274,17 @@ static void server(struct unimsg_sock *s)
 			ERR_CLOSE(s);
 		}
 
-		for (unsigned i = 0; i < nrecv; i++) {
-			msg = descs[i].addr;
-			for (unsigned j = 0; j * 8 < descs[i].size; j++)
-				msg[j]++;
-		}
-
 		do {
 			STORE_TIME(start);
-			rc = unimsg_send(s, descs, nrecv, opt_busy_poll);
+			rc = unimsg_send(s, msg, len, opt_busy_poll);
 			STORE_TIME(stop);
 		} while (opt_busy_poll && rc == -EAGAIN);
 		if (rc == -ECONNRESET) {
-			unimsg_buffer_put(descs, nrecv);
 			break;
 		} else if (rc) {
 			fprintf(stderr, "Error sending desc: %s\n",
 				strerror(-rc));
-			ERR_PUT(descs, nrecv, s);
+			ERR_CLOSE(s);
 		}
 
 #ifdef ADDITIONAL_STATS

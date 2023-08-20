@@ -6,47 +6,52 @@ import time
 
 curdir = os.path.dirname(__file__)
 
-TARGET        = 'process'
-RUNS	      = 10
-RR_ITERATIONS = 1000000
-RES_FILENAME  = 'res-rr-latency.csv'
-MSG_SIZE      = 1024
-MGR_PATH      = '/users/fparola/src/unimsg/manager/unimsg_manager'
-TESTS_GAP     = 5   # Seconds of gap between two tests
-COMMANDS      = {
-	'radiobox': ['./radiobox/run_vm.sh'],
-	'process': ['./process/build/rr-latency'],
-	'process-sk-msg': './process/build/rr-latency'
+TARGETS		  = ['radiobox', 'localhost', 'bridge',	'unix', 'skmsg']
+TARGET		  = 'localhost'
+RUNS		  = 1
+RR_ITERATIONS	  = 1000000
+WARMUP_ITERATIONS = 1000
+RES_FILENAME	  = 'res-rr-latency.csv'
+MSG_SIZE	  = 64
+MGR_PATH	  = '/users/fparola/src/unimsg/manager/unimsg_manager'
+TESTS_GAP	  = 5 # Seconds of gap between two tests
+SAR_SECS	  = 5 # Must guarantee that the test won't end before sar
+SERVER_COMMANDS = {
+	'radiobox': ['sudo', './radiobox/run_vm.sh'],
+	'localhost': ['./process/build/rr-latency'],
+	'bridge': ['sudo', 'ip', 'netns', 'exec', 'ns1',
+		   './process/build/rr-latency'],
+	'unix': ['./process/build/rr-latency'],
+	'skmsg': ['sudo', './process/build/rr-latency']
 }
-FLAGS	      = {
+CLIENT_COMMANDS = {
+	'radiobox': ['sudo', './radiobox/run_vm.sh'],
+	'localhost': ['./process/build/rr-latency'],
+	'bridge': ['sudo', 'ip', 'netns', 'exec', 'ns2',
+		   './process/build/rr-latency'],
+	'unix': ['./process/build/rr-latency'],
+	'skmsg': ['sudo', './process/build/rr-latency']
+}
+FLAGS = {
 	'radiobox': [],
-	'process': [],
-	'process-sk-msg': []
+	'localhost': ['-l'],
+	'bridge': [],
+	'unix': ['-u'],
+	'skmsg': ['-l', '-m']
 }
 
 out = open(RES_FILENAME, 'w')
-out.write("run,msg-size,rr-latency,user,system,softirq,guest,idle\n")
+out.write('run,msg-size,rr-latency,user,system,softirq,guest,idle\n')
 
 manager_cmd = [MGR_PATH]
 manager = subprocess.Popen(manager_cmd, stderr=subprocess.DEVNULL,
 			   stdout=subprocess.DEVNULL)
 
 for run in range(RUNS):
-	server_cmd = ['taskset', '1', 'sudo', './process/build/rr-latency',
-		      '-i', str(RR_ITERATIONS), '-s', str(MSG_SIZE), '-m', '-l']
-	client_cmd = ['taskset', '2', 'sudo', './process/build/rr-latency',
-	       	      '-i', str(RR_ITERATIONS), '-s', str(MSG_SIZE), '-c', '-m',
-		      '-l']
-	# server_cmd = ['taskset', '1', 'sudo', 'ip', 'netns', 'exec', 'ns0',
-	# 	      './process/build/rr-latency', '-i', str(RR_ITERATIONS),
-	# 	      '-s', str(MSG_SIZE)]
-	# client_cmd = ['taskset', '2', 'sudo', 'ip', 'netns', 'exec', 'ns1',
-	# 	      './process/build/rr-latency', '-i', str(RR_ITERATIONS),
-	# 	      '-s', str(MSG_SIZE), '-c']
-	# server_cmd = ['taskset', '1', 'sudo', './radiobox/run_vm.sh', '-i',
-	# 	      str(RR_ITERATIONS), '-s', str(MSG_SIZE)]
-	# client_cmd = ['taskset', '2', 'sudo', './radiobox/run_vm.sh', '-i',
-	# 	      str(RR_ITERATIONS), '-s', str(MSG_SIZE), '-c']
+	server_cmd = ['taskset', '1'] + SERVER_COMMANDS[TARGET] + FLAGS[TARGET]
+	client_cmd = ['taskset', '2'] + CLIENT_COMMANDS[TARGET] + ['-c', '-i',
+		     str(RR_ITERATIONS), '-s', str(MSG_SIZE), '-w',
+		     str(WARMUP_ITERATIONS)] + FLAGS[TARGET]
 
 	print(f'Run {run}: exchanging {RR_ITERATIONS} rrs of size {MSG_SIZE}...')
 
@@ -56,9 +61,11 @@ for run in range(RUNS):
 	client = subprocess.Popen(client_cmd, stderr=subprocess.DEVNULL,
 				  stdout=subprocess.PIPE, text=True)
 
+	time.sleep(1.5)
+
 	# Collect CPU statistics
 	# Make sure the apps run long enough
-	cmd = ['sar', '-P', '0,1', '-u', 'ALL', '10', '1']
+	cmd = ['sar', '-P', '0,1', '-u', 'ALL', str(SAR_SECS), '1']
 	res = subprocess.run(cmd, check=True, capture_output=True, text=True) \
 		        .stdout
 	resline0 = res.splitlines()[3]

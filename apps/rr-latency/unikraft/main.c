@@ -96,13 +96,9 @@ static void parse_command_line(int argc, char **argv)
 	}
 }
 
-
-static void do_client_rr(int s, unsigned long val)
+static void do_client_rr(int s)
 {
-	unsigned long msg[MAX_MSG_SIZE / sizeof(unsigned long)];
-
-	for (unsigned j = 0; j < opt_size / 8; j++)
-		msg[j] = val;
+	char msg[MAX_MSG_SIZE];
 
 	if (send(s, msg, opt_size, 0) != opt_size) {
 		fprintf(stderr, "Error sending message: %s\n", strerror(errno));
@@ -114,14 +110,7 @@ static void do_client_rr(int s, unsigned long val)
 			strerror(errno));
 		ERR_CLOSE(s);
 	}
-
-	for (unsigned j = 0; j < opt_size / 8; j++)
-		if (msg[j] != val + 1) {
-			fprintf(stderr, "Received unexpected message\n");
-			ERR_CLOSE(s);
-		}
 }
-
 
 static void client(int s)
 {
@@ -141,7 +130,7 @@ static void client(int s)
 	if (opt_warmup) {
 		printf("Performing %u warmup RRs...\n", opt_warmup);
 		for (unsigned long i = 0; i < opt_warmup; i++)
-			do_client_rr(s, i);
+			do_client_rr(s);
 	}
 
 	printf("Sending %u requests of %u bytes with %u ms of delay\n",
@@ -159,7 +148,7 @@ static void client(int s)
 			start = ukplat_monotonic_clock();
 		}
 
-		do_client_rr(s, i);
+		do_client_rr(s);
 
 		if (opt_delay) {
 			latency = ukplat_monotonic_clock() - start;
@@ -178,10 +167,9 @@ static void client(int s)
 	printf("Socket closed\n");
 }
 
-
 static void server(int s)
 {
-	unsigned long msg[MAX_MSG_SIZE / sizeof(unsigned long)];
+	char msg[MAX_MSG_SIZE];
 
 	printf("I'm the server\n");
 
@@ -227,9 +215,6 @@ static void server(int s)
 				strerror(errno));
 			ERR_CLOSE(s);
 		}
-
-		for (unsigned j = 0; j < size / 8; j++)
-			msg[j]++;
 
 		if (send(s, msg, size, 0) != size) {
 			fprintf(stderr, "Error sending message: %s\n",

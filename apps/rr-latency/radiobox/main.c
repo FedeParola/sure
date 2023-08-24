@@ -112,13 +112,12 @@ static void parse_command_line(int argc, char **argv)
 	}
 }
 
-static void do_client_rr(struct unimsg_sock *s, unsigned long val)
+static void do_client_rr(struct unimsg_sock *s)
 {
 	int rc;
-	struct unimsg_shm_desc descs[UNIMSG_MAX_DESCS_BULK], *desc;
+	struct unimsg_shm_desc descs[UNIMSG_MAX_DESCS_BULK];
 	unsigned ndescs = (opt_size - 1) / UNIMSG_SHM_BUFFER_SIZE + 1;
 	unsigned nrecv;
-	unsigned long *msg;
 #ifdef ADDITIONAL_STATS
 	unsigned long start, stop;
 #endif
@@ -130,19 +129,8 @@ static void do_client_rr(struct unimsg_sock *s, unsigned long val)
 		ERR_CLOSE(s);
 	}
 
-	desc = &descs[0];
-	msg = desc->addr;
-	int available = UNIMSG_SHM_BUFFER_SIZE;
-	for (unsigned i = 0; i < opt_size / 8; i++) {
-		if (available < 8) {
-			desc->size = UNIMSG_SHM_BUFFER_SIZE - available;
-			desc++;
-			available = UNIMSG_SHM_BUFFER_SIZE;
-		}
-		msg[i % UNIMSG_SHM_BUFFER_SIZE] = val;
-		available -= 8;
-	}
-	desc->size = UNIMSG_SHM_BUFFER_SIZE - available;
+	for (unsigned i = 0; i < ndescs; i++)
+		*(char *)descs[i].addr = 0;
 
 	do {
 		STORE_TIME(start);
@@ -158,7 +146,6 @@ static void do_client_rr(struct unimsg_sock *s, unsigned long val)
 	if (++iterations_count > opt_warmup)
 		send_time += stop - start;
 #endif
-
 
 	do {
 		STORE_TIME(start);
@@ -181,23 +168,8 @@ static void do_client_rr(struct unimsg_sock *s, unsigned long val)
 		recv_time += stop - start;
 #endif
 
-	unsigned read = 0;
-	for (unsigned i = 0; i < ndescs; i++) {
-		msg = descs[i].addr;
-		for (unsigned j = 0; j * 8 < descs[i].size; j++) {
-			if (msg[j] != val + 1) {
-				fprintf(stderr, "Received unexpected message "
-					"%lu\n", msg[i]);
-				ERR_PUT(descs, ndescs, s);
-			}
-			read += 8;
-		}
-	}
-
-	if (read != opt_size) {
-		fprintf(stderr, "Unexpected message size %u\n", read);
-		ERR_PUT(descs, ndescs, s);
-	}
+	for (unsigned i = 0; i < ndescs; i++)
+		*(char *)descs[i].addr = 0;
 
 	unimsg_buffer_put(descs, ndescs);
 }
@@ -219,7 +191,7 @@ static void client(struct unimsg_sock *s)
 	if (opt_warmup) {
 		printf("Performing %u warmup RRs...\n", opt_warmup);
 		for (unsigned long i = 0; i < opt_warmup; i++)
-			do_client_rr(s, i);
+			do_client_rr(s);
 	}
 
 	printf("Sending %u requests of %u bytes with %u ms of delay\n",
@@ -236,7 +208,7 @@ static void client(struct unimsg_sock *s)
 			start = ukplat_monotonic_clock();
 		}
 
-		do_client_rr(s, i);
+		do_client_rr(s);
 
 		if (opt_delay) {
 			latency = ukplat_monotonic_clock() - start;
@@ -267,7 +239,6 @@ static void server(struct unimsg_sock *s)
 	int rc;
 	struct unimsg_shm_desc descs[UNIMSG_MAX_DESCS_BULK];
 	unsigned nrecv;
-	unsigned long *msg;
 
 	printf("I'm the server\n");
 
@@ -322,11 +293,8 @@ static void server(struct unimsg_sock *s)
 			ERR_CLOSE(s);
 		}
 
-		for (unsigned i = 0; i < nrecv; i++) {
-			msg = descs[i].addr;
-			for (unsigned j = 0; j * 8 < descs[i].size; j++)
-				msg[j]++;
-		}
+		for (unsigned i = 0; i < nrecv; i++)
+			*(char *)descs[i].addr = 0;
 
 		do {
 			STORE_TIME(start);

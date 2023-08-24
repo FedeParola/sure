@@ -145,17 +145,14 @@ static void parse_command_line(int argc, char **argv)
 	}
 }
 
-static void do_client_rr(int s, unsigned long val)
+static void do_client_rr(int s)
 {
 	ssize_t size;
 #ifdef ADDITIONAL_STATS
 	struct timespec start, stop;
 #endif
 
-	unsigned long msg[MAX_MSG_SIZE / sizeof(unsigned long)];
-
-	for (unsigned j = 0; j < opt_size / 8; j++)
-		msg[j] = val;
+	char msg[MAX_MSG_SIZE];
 
 	do {
 		STORE_TIME(start);
@@ -191,12 +188,6 @@ static void do_client_rr(int s, unsigned long val)
 			     + stop.tv_nsec - start.tv_nsec;
 	}
 #endif
-
-	for (unsigned j = 0; j < opt_size / 8; j++)
-		if (msg[j] != val + 1) {
-			fprintf(stderr, "Received unexpected message\n");
-			ERR_CLOSE(s);
-		}
 }
 
 static void client(int s)
@@ -271,7 +262,7 @@ static void client(int s)
 	if (opt_warmup) {
 		printf("Performing %u warmup RRs...\n", opt_warmup);
 		for (unsigned long i = 0; i < opt_warmup; i++)
-			do_client_rr(s, i);
+			do_client_rr(s);
 	}
 
 	printf("Sending %u requests of %u bytes with %u ms of delay\n",
@@ -290,7 +281,7 @@ static void client(int s)
 			clock_gettime(CLOCK_MONOTONIC, &start);
 		}
 
-		do_client_rr(s, i);
+		do_client_rr(s);
 
 		if (opt_delay) {
 			clock_gettime(CLOCK_MONOTONIC, &stop);
@@ -324,7 +315,7 @@ static void server(int s, char *path)
 {
 	struct bpf_object *bpf_prog;
 	int bpf_prog_fd, sockmap_fd;
-	unsigned long msg[MAX_MSG_SIZE / sizeof(unsigned long)];
+	char msg[MAX_MSG_SIZE];
 
 	printf("I'm the server\n");
 
@@ -468,9 +459,6 @@ static void server(int s, char *path)
 		recv_time += (stop.tv_sec - start.tv_sec) * 1000000000
 			     + stop.tv_nsec - start.tv_nsec;
 #endif
-
-		for (unsigned j = 0; j < rsize / 8; j++)
-			msg[j]++;
 
 		do {
 			STORE_TIME(start);

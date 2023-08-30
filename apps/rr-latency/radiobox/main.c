@@ -8,9 +8,8 @@
 #define DEFAULT_SIZE 64
 #define DEFAULT_WARMUP 0
 #define DEFAULT_DELAY 0
-#define SERVER_VM_ID 0
+#define SERVER_ADDR 1
 #define SERVER_PORT 5000
-#define CLIENT_VM_ID 1
 #define ERR_CLOSE(s) ({ unimsg_close(s); exit(1); })
 #define ERR_PUT(descs, ndescs, s) ({					\
 	unimsg_buffer_put(descs, ndescs);				\
@@ -116,7 +115,7 @@ static void do_client_rr(struct unimsg_sock *s)
 {
 	int rc;
 	struct unimsg_shm_desc descs[UNIMSG_MAX_DESCS_BULK];
-	unsigned ndescs = (opt_size - 1) / UNIMSG_SHM_BUFFER_SIZE + 1;
+	unsigned ndescs = (opt_size - 1) / UNIMSG_BUFFER_SIZE + 1;
 	unsigned nrecv;
 #ifdef ADDITIONAL_STATS
 	unsigned long start, stop;
@@ -180,7 +179,7 @@ static void client(struct unimsg_sock *s)
 
 	printf("I'm the client\n");
 
-	rc = unimsg_connect(s, SERVER_VM_ID, SERVER_PORT);
+	rc = unimsg_connect(s, SERVER_ADDR, SERVER_PORT);
 	if (rc) {
 		fprintf(stderr, "Error connecting to server: %s\n",
 			strerror(-rc));

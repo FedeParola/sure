@@ -1,5 +1,13 @@
 #!/bin/bash
 
+if [ -z $1 ]; then
+	echo "usage: $0 <sidecar_id> <app_options>"
+	exit 1
+fi
+
+id=$1
+shift
+
 eval $HOME/src/qemu/build/qemu-system-x86_64 \
 	-nographic \
 	-vga none \
@@ -9,6 +17,8 @@ eval $HOME/src/qemu/build/qemu-system-x86_64 \
 	-cpu host \
 	-device ivshmem-doorbell,vectors=1,chardev=id \
 	-chardev socket,path=/tmp/ivshmem_socket,id=id \
-	-object memory-backend-file,size=4M,share=true,mem-path=/dev/hugepages/unimsg_buffers,id=hostmem \
-	-device ivshmem-plain,memdev=hostmem \
+	-object memory-backend-file,size=1G,share=true,mem-path=/dev/hugepages/unimsg_buffers,id=buffers_mem \
+	-device ivshmem-plain,memdev=buffers_mem \
+	-object memory-backend-file,size=4K,share=true,mem-path=/dev/shm/unimsg_sidecar_$id,id=sidecar_mem \
+	-device ivshmem-plain,memdev=sidecar_mem \
         -append \""$@"\"

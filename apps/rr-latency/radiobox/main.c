@@ -32,6 +32,8 @@ static int opt_client = 0;
 static int opt_busy_poll = 0;
 static unsigned opt_warmup = DEFAULT_WARMUP;
 static unsigned opt_delay = DEFAULT_DELAY;
+static unsigned opt_http = 0;
+static unsigned http_body_size;
 static struct option long_options[] = {
 	{"iterations", required_argument, 0, 'i'},
 	{"size", required_argument, 0, 's'},
@@ -39,8 +41,28 @@ static struct option long_options[] = {
 	{"busy-poll", optional_argument, 0, 'b'},
 	{"warmup", optional_argument, 0, 'w'},
 	{"delay", optional_argument, 0, 'd'},
+	{"http", optional_argument, 0, 'h'},
 	{0, 0, 0, 0}
 };
+
+static char http_req[] = "GET / HTTP/1.1\r\n"
+			 "Host: localhost\r\n"
+			 "User-Agent: custom-client/1.0.0\r\n"
+			 "Accept: */*\r\n"
+			 "\r\n";
+/* The Content-Length field is expected to always occupy 4B, hence
+ * sizeof(http_resp) returns the correct length of the string after the
+ * placeholder has been replaced (%4u only occupies 3 chars, but sizeof also
+ * accounts for the trailing \0)
+ */
+static char http_resp[] = "HTTP/1.1 200 OK\r\n"
+			  "Server: custom-server/1.0.0\r\n"
+			  "Date: Thu, 07 Sep 2023 20:57:10 GMT\r\n" /* current datetime */
+			  "Content-Type: text/html\r\n"
+			  "Content-Length: %4u\r\n" /* body length */
+			  "Connection: keep-alive\r\n"
+			  "\r\n";
+			  /* "%s"; omitted body for now */
 
 int usleep(unsigned usec);
 
@@ -54,7 +76,8 @@ static void usage(const char *prog)
 		"  -c, --client		Behave as client (default is server)\n"
 		"  -b, --busy-poll	Use busy polling (non-blocking sockets)\n"
 		"  -w, --warmup		Number of warmup iterations (default %u)\n"
-		"  -d, --delay		Delay between consecutive requests in ms (default %u)\n",
+		"  -d, --delay		Delay between consecutive requests in ms (default %u)\n"
+		"  -h, --http		Use HTTP payloads\n",
 		prog, DEFAULT_SIZE, DEFAULT_WARMUP, DEFAULT_DELAY);
 
 	exit(1);
@@ -65,7 +88,7 @@ static void parse_command_line(int argc, char **argv)
 	int option_index, c;
 
 	for (;;) {
-		c = getopt_long(argc, argv, "i:s:cbw:d:", long_options,
+		c = getopt_long(argc, argv, "i:s:cbw:d:h", long_options,
 				&option_index);
 		if (c == -1)
 			break;
@@ -95,6 +118,9 @@ static void parse_command_line(int argc, char **argv)
 		case 'd':
 			opt_delay = atoi(optarg);
 			break;
+		case 'h':
+			opt_http = 1;
+			break;
 		default:
 			usage(argv[0]);
 		}
@@ -108,6 +134,17 @@ static void parse_command_line(int argc, char **argv)
 	if (opt_client && !opt_iterations) {
 		fprintf(stderr, "Client must specify iterations > 0\n");
 		usage(argv[0]);
+	}
+
+	if (opt_http && !opt_client) {
+		if (opt_size < sizeof(http_resp)) {
+			fprintf(stderr, "Message size (%u) too small to hold "
+				"HTTP header (%lu)\n", opt_size,
+				sizeof(http_resp));
+			usage(argv[0]);
+		}
+
+		http_body_size = opt_size - sizeof(http_resp);
 	}
 }
 
@@ -130,6 +167,8 @@ static void do_client_rr(struct unimsg_sock *s)
 
 	for (unsigned i = 0; i < ndescs; i++)
 		*(char *)descs[i].addr = 0;
+	if (opt_http)
+		strcpy(descs[0].addr, http_req);
 
 	do {
 		STORE_TIME(start);
@@ -294,6 +333,8 @@ static void server(struct unimsg_sock *s)
 
 		for (unsigned i = 0; i < nrecv; i++)
 			*(char *)descs[i].addr = 0;
+		if (opt_http)
+			sprintf(descs[0].addr, http_resp, http_body_size);
 
 		do {
 			STORE_TIME(start);

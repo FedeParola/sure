@@ -1,0 +1,6 @@
+### Invisible option for dependencies
+config APPTHROUGHPUT_DEPENDENCIES
+	bool
+	default y
+	select LIBUNIMSG
+	select LIBPOSIX_TIME

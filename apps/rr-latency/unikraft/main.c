@@ -14,7 +14,7 @@
 #define DEFAULT_DELAY 0
 #define SERVER_IP 0x0100000a /* 10.0.0.1, already in nbo */
 #define SERVER_PORT 5000
-#define MAX_MSG_SIZE 8192
+#define MAX_MSG_SIZE 16384
 #define ERR_CLOSE(s) ({ close(s); exit(1); })
 
 static unsigned opt_iterations = 0;
@@ -105,7 +105,13 @@ static void do_client_rr(int s)
 		ERR_CLOSE(s);
 	}
 
-	if (recv(s, msg, sizeof(msg), 0) != opt_size) {
+	unsigned rsize = 0, size;
+	do {
+		size = recv(s, msg + rsize, sizeof(msg) - rsize, 0);
+		if (size > 0)
+			rsize += size;
+	} while (rsize < opt_size && size > 0);
+	if (rsize != opt_size) {
 		fprintf(stderr, "Error receiving message: %s\n",
 			strerror(errno));
 		ERR_CLOSE(s);
@@ -207,16 +213,21 @@ static void server(int s)
 	
 	/* Handle requests until the connection is closed by the client */
 	for (;;) {
-		ssize_t size = recv(s, msg, sizeof(msg), 0);
+		unsigned rsize = 0, size;
+		do {
+			size = recv(s, msg + rsize, sizeof(msg) - rsize, 0);
+			if (size > 0)
+				rsize += size;
+		} while (rsize < opt_size && size > 0);
 		if (size == 0) {
 			break;
-		} else if (size < 0) {
+		} else if (rsize != opt_size) {
 			fprintf(stderr, "Error receiving message: %s\n",
 				strerror(errno));
 			ERR_CLOSE(s);
 		}
 
-		if (send(s, msg, size, 0) != size) {
+		if (send(s, msg, rsize, 0) != rsize) {
 			fprintf(stderr, "Error sending message: %s\n",
 				strerror(errno));
 			ERR_CLOSE(s);

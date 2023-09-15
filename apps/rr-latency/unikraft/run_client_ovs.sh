@@ -4,7 +4,7 @@ eval qemu-system-x86_64 \
 	-nographic \
 	-vga none \
 	-net none \
-	-kernel ./build/unikraft_qemu-x86_64 \
+	-kernel $(dirname $0)/build/unikraft_qemu-x86_64 \
 	-enable-kvm \
 	-cpu host \
 	-m 1024 \

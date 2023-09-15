@@ -217,12 +217,17 @@ static void do_client_rr(int s)
 	}
 #endif
 
+	unsigned rsize = 0;
 	do {
-		STORE_TIME(start);
-		size = recv(s, msg, sizeof(msg), 0);
-		STORE_TIME(stop);
-	} while (size < 0 && opt_busy_poll && errno == EAGAIN);
-	if (!opt_http && size != opt_size) {
+		do {
+			STORE_TIME(start);
+			size = recv(s, msg + rsize, sizeof(msg) - rsize, 0);
+			STORE_TIME(stop);
+		} while (size < 0 && opt_busy_poll && errno == EAGAIN);
+		if (size > 0)
+			rsize += size;
+	} while (rsize < opt_size && size > 0);
+	if (!opt_http && rsize != opt_size) {
 		fprintf(stderr, "Error receiving message: %s\n",
 			strerror(errno));
 		ERR_CLOSE(s);
@@ -496,22 +501,31 @@ static void server(int s, char *path)
 	
 	/* Handle requests until the connection is closed by the client */
 	for (;;) {
-		ssize_t rsize, ssize;
 #ifdef ADDITIONAL_STATS
 		struct timespec start, stop;
 #endif
+		ssize_t rsize = 0, ssize, rc;
 
 		do {
-			STORE_TIME(start);
-			rsize = recv(s, msg, sizeof(msg), 0);
-			STORE_TIME(stop);
-		} while (rsize < 0 && opt_busy_poll && errno == EAGAIN);
-		if (rsize == 0) {
+			do {
+				STORE_TIME(start);
+				rc = recv(s, msg + rsize, sizeof(msg) - rsize,
+					  0);
+				STORE_TIME(stop);
+			} while (rc < 0 && opt_busy_poll && errno == EAGAIN);
+			if (rc > 0)
+				rsize += rc;
+		} while (rsize < opt_size && rc > 0);
+		if (rc == 0) {
 			break;
-		} else if (rsize < 0) {
+		} else if (rc < 0) {
 			fprintf(stderr, "Error receiving message: %s\n",
 				strerror(errno));
 			ERR_UNPIN(s);
+		} else if (!opt_http && rsize != opt_size) {
+			fprintf(stderr, "Error receiving message: %s\n",
+				strerror(errno));
+			ERR_CLOSE(s);
 		}
 
 #ifdef ADDITIONAL_STATS

@@ -5,6 +5,7 @@
 #include <string.h>
 #include <uk/plat/time.h>
 
+#define UNIMSG_BUFFER_AVAILABLE (UNIMSG_BUFFER_SIZE - UNIMSG_BUFFER_HEADROOM)
 #define DEFAULT_SIZE 64
 #define DEFAULT_WARMUP 0
 #define DEFAULT_DELAY 0
@@ -34,6 +35,9 @@ static unsigned opt_warmup = DEFAULT_WARMUP;
 static unsigned opt_delay = DEFAULT_DELAY;
 static unsigned opt_http = 0;
 static unsigned http_body_size;
+static unsigned opt_buffers_reuse = 0;
+static struct unimsg_shm_desc descs[UNIMSG_MAX_DESCS_BULK];
+static unsigned ndescs;
 static struct option long_options[] = {
 	{"iterations", required_argument, 0, 'i'},
 	{"size", required_argument, 0, 's'},
@@ -42,6 +46,7 @@ static struct option long_options[] = {
 	{"warmup", optional_argument, 0, 'w'},
 	{"delay", optional_argument, 0, 'd'},
 	{"http", optional_argument, 0, 'h'},
+	{"buffers-reuse", optional_argument, 0, 'r'},
 	{0, 0, 0, 0}
 };
 
@@ -77,7 +82,8 @@ static void usage(const char *prog)
 		"  -b, --busy-poll	Use busy polling (non-blocking sockets)\n"
 		"  -w, --warmup		Number of warmup iterations (default %u)\n"
 		"  -d, --delay		Delay between consecutive requests in ms (default %u)\n"
-		"  -h, --http		Use HTTP payloads\n",
+		"  -h, --http		Use HTTP payloads\n"
+		"  -r, --buffers-reuse	Reuse shm buffers instead of reallocating on each rr\n",
 		prog, DEFAULT_SIZE, DEFAULT_WARMUP, DEFAULT_DELAY);
 
 	exit(1);
@@ -88,7 +94,7 @@ static void parse_command_line(int argc, char **argv)
 	int option_index, c;
 
 	for (;;) {
-		c = getopt_long(argc, argv, "i:s:cbw:d:h", long_options,
+		c = getopt_long(argc, argv, "i:s:cbw:d:hr", long_options,
 				&option_index);
 		if (c == -1)
 			break;
@@ -121,6 +127,9 @@ static void parse_command_line(int argc, char **argv)
 		case 'h':
 			opt_http = 1;
 			break;
+		case 'r':
+			opt_buffers_reuse = 1;
+			break;
 		default:
 			usage(argv[0]);
 		}
@@ -151,18 +160,18 @@ static void parse_command_line(int argc, char **argv)
 static void do_client_rr(struct unimsg_sock *s)
 {
 	int rc;
-	struct unimsg_shm_desc descs[UNIMSG_MAX_DESCS_BULK];
-	unsigned ndescs = (opt_size - 1) / UNIMSG_BUFFER_SIZE + 1;
 	unsigned nrecv;
 #ifdef ADDITIONAL_STATS
 	unsigned long start, stop;
 #endif
 
-	rc = unimsg_buffer_get(descs, ndescs); 
-	if (rc) {
-		fprintf(stderr, "Error getting shm buffer: %s\n",
-			strerror(-rc));
-		ERR_CLOSE(s);
+	if (!opt_buffers_reuse) {
+		rc = unimsg_buffer_get(descs, ndescs); 
+		if (rc) {
+			fprintf(stderr, "Error getting shm buffer: %s\n",
+				strerror(-rc));
+			ERR_CLOSE(s);
+		}
 	}
 
 	for (unsigned i = 0; i < ndescs; i++)
@@ -209,7 +218,8 @@ static void do_client_rr(struct unimsg_sock *s)
 	for (unsigned i = 0; i < ndescs; i++)
 		*(char *)descs[i].addr = 0;
 
-	unimsg_buffer_put(descs, ndescs);
+	if (!opt_buffers_reuse)
+		unimsg_buffer_put(descs, ndescs);
 }
 
 static void client(struct unimsg_sock *s)
@@ -225,6 +235,16 @@ static void client(struct unimsg_sock *s)
 		ERR_CLOSE(s);
 	}
 	printf("Socket connected\n");
+
+	ndescs = (opt_size - 1) / UNIMSG_BUFFER_AVAILABLE + 1;
+	if (opt_buffers_reuse) {
+		rc = unimsg_buffer_get(descs, ndescs); 
+		if (rc) {
+			fprintf(stderr, "Error getting shm buffer: %s\n",
+				strerror(-rc));
+			ERR_CLOSE(s);
+		}
+	}
 
 	if (opt_warmup) {
 		printf("Performing %u warmup RRs...\n", opt_warmup);
@@ -257,6 +277,9 @@ static void client(struct unimsg_sock *s)
 
 	if (!opt_delay)
 		total = ukplat_monotonic_clock() - start;
+
+	if (opt_buffers_reuse)
+		unimsg_buffer_put(descs, ndescs);
 
 	unimsg_close(s);
 	printf("Socket closed\n");

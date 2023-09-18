@@ -426,6 +426,7 @@ static void server(int s, char *path)
 	struct sockaddr_un addr_un = {0};
 	int len;
 	if (opt_unix) {
+		unlink(SOCKET_PATH);
 		addr_un.sun_family = AF_UNIX;
 		strcpy(addr_un.sun_path, SOCKET_PATH);
 		addr = (struct sockaddr *)&addr_un;

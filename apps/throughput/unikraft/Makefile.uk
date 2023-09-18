@@ -1,0 +1,3 @@
+$(eval $(call addlib,appthroughput))
+
+APPTHROUGHPUT_SRCS-y += $(APPTHROUGHPUT_BASE)/main.c

@@ -5,6 +5,7 @@
 #include <string.h>
 #include <uk/plat/time.h>
 
+#define UNIMSG_BUFFER_AVAILABLE (UNIMSG_BUFFER_SIZE - UNIMSG_BUFFER_HEADROOM)
 #define DEFAULT_SIZE 64
 #define SERVER_ADDR 1
 #define SERVER_PORT 5000
@@ -19,11 +20,15 @@ static unsigned opt_size = DEFAULT_SIZE;
 static unsigned opt_connections;
 static unsigned opt_http = 0;
 static unsigned http_body_size;
+static unsigned opt_buffers_reuse = 0;
+static struct unimsg_shm_desc descs[UNIMSG_MAX_NSOCKS][UNIMSG_MAX_DESCS_BULK];
+static unsigned ndescs;
 static struct option long_options[] = {
 	{"duration", required_argument, 0, 'd'},
 	{"size", required_argument, 0, 's'},
 	{"connections", required_argument, 0, 'c'},
 	{"http", optional_argument, 0, 'h'},
+	{"buffers-reuse", optional_argument, 0, 'r'},
 	{0, 0, 0, 0}
 };
 
@@ -56,7 +61,8 @@ static void usage(const char *prog)
 		"  -d, --duration	Duration of the test in seconds\n"
 		"  -s, --size		Size of the message in bytes (default %u)\n"
 		"  -c, --connections	Number of client connections (if not specified or 0, behave as server)\n"
-		"  -h, --http		Use HTTP payloads\n",
+		"  -h, --http		Use HTTP payloads\n"
+		"  -r, --buffers-reuse	Reuse shm buffers instead of reallocating on each rr\n",
 		prog, DEFAULT_SIZE);
 
 	exit(1);
@@ -67,7 +73,7 @@ static void parse_command_line(int argc, char **argv)
 	int option_index, c;
 
 	for (;;) {
-		c = getopt_long(argc, argv, "d:s:c:bh", long_options,
+		c = getopt_long(argc, argv, "d:s:c:bhr", long_options,
 				&option_index);
 		if (c == -1)
 			break;
@@ -90,6 +96,9 @@ static void parse_command_line(int argc, char **argv)
 			break;
 		case 'h':
 			opt_http = 1;
+			break;
+		case 'r':
+			opt_buffers_reuse = 1;
 			break;
 		default:
 			usage(argv[0]);
@@ -118,39 +127,44 @@ static void parse_command_line(int argc, char **argv)
 	}
 }
 
-static void client_send(struct unimsg_sock *s)
+static void client_send(struct unimsg_sock *s, unsigned id)
 {
 	int rc;
-	struct unimsg_shm_desc descs[UNIMSG_MAX_DESCS_BULK];
-	unsigned ndescs = (opt_size - 1) / UNIMSG_BUFFER_SIZE + 1;
 
-	rc = unimsg_buffer_get(descs, ndescs); 
-	if (rc) {
-		fprintf(stderr, "Error getting shm buffer: %s\n",
-			strerror(-rc));
-		exit(1);
+	if (!opt_buffers_reuse) {
+		rc = unimsg_buffer_get(descs[id], ndescs); 
+		if (rc) {
+			fprintf(stderr, "Error getting shm buffer: %s\n",
+				strerror(-rc));
+			ERR_CLOSE(s);
+		}
 	}
 
-	for (unsigned i = 0; i < ndescs; i++)
-		*(char *)descs[i].addr = 0;
-	if (opt_http)
-		strcpy(descs[0].addr, http_req);
+	// printf("Got buffers\n");
 
-	rc = unimsg_send(s, descs, ndescs, 1);
+	for (unsigned i = 0; i < ndescs; i++)
+		*(char *)descs[id][i].addr = 0;
+	if (opt_http)
+		strcpy(descs[id][0].addr, http_req);
+
+	// printf("Touched buffers\n");
+
+	rc = unimsg_send(s, descs[id], ndescs, 1);
 	if (rc) {
 		fprintf(stderr, "Error sending descs: %s\n", strerror(-rc));
 		exit(1);
 	}
+
+	// printf("Sent buffers\n");
 }
 
-static void client_recv(struct unimsg_sock *s, int nonblock)
+static void client_recv(struct unimsg_sock *s, unsigned id, int nonblock)
 {
 	int rc;
-	struct unimsg_shm_desc descs[UNIMSG_MAX_DESCS_BULK];
-	unsigned nrecv, ndescs = (opt_size - 1) / UNIMSG_BUFFER_SIZE + 1;
+	unsigned nrecv;
 
 	nrecv = ndescs;
-	rc = unimsg_recv(s, descs, &nrecv, nonblock);
+	rc = unimsg_recv(s, descs[id], &nrecv, nonblock);
 	if (rc) {
 		fprintf(stderr, "Error receiving descs: %s\n", strerror(-rc));
 		exit(1);
@@ -161,10 +175,17 @@ static void client_recv(struct unimsg_sock *s, int nonblock)
 		exit(1);
 	}
 
-	for (unsigned i = 0; i < ndescs; i++)
-		*(char *)descs[i].addr = 0;
+	// printf("Rcvd buffers\n");
 
-	unimsg_buffer_put(descs, ndescs);
+	for (unsigned i = 0; i < ndescs; i++)
+		*(char *)descs[id][i].addr = 0;
+
+	// printf("Touched buffers\n");
+
+	if (!opt_buffers_reuse)
+		unimsg_buffer_put(descs[id], ndescs);
+
+	// printf("Released buffers\n");
 }
 
 static void client()
@@ -174,6 +195,8 @@ static void client()
 	int ready[UNIMSG_MAX_NSOCKS];
 
 	printf("I'm the client\n");
+
+	ndescs = (opt_size - 1) / UNIMSG_BUFFER_AVAILABLE + 1;
 
 	for (unsigned i = 0; i < opt_connections; i++) {
 		struct unimsg_sock *s;
@@ -193,6 +216,13 @@ static void client()
 		}
 
 		socks[i] = s;
+
+		rc = unimsg_buffer_get(descs[i], ndescs); 
+		if (rc) {
+			fprintf(stderr, "Error getting shm buffer: %s\n",
+				strerror(-rc));
+			exit(1);
+		}
 	}
 	printf("Sockets connected\n");
 
@@ -202,7 +232,7 @@ static void client()
 	unsigned long start = ukplat_monotonic_clock();
 
 	for (unsigned i = 0; i < opt_connections; i++)
-		client_send(socks[i]);
+		client_send(socks[i], i);
 
 	do {
 		rc = unimsg_poll(socks, opt_connections, ready);
@@ -213,15 +243,17 @@ static void client()
 
 		for (unsigned i = 0; i < opt_connections; i++) {
 			if (ready[i]) {
-				client_recv(socks[i], 1);
-				client_send(socks[i]);
+				client_recv(socks[i], i, 1);
+				client_send(socks[i], i);
 			}
 		}
 	} while (ukplat_monotonic_clock() - start
 		 < (unsigned long)opt_duration * 1000000000);
 
 	for (unsigned i = 0; i < opt_connections; i++) {
-		client_recv(socks[i], 0);
+		client_recv(socks[i], 0, i);
+		if (opt_buffers_reuse)
+			unimsg_buffer_put(descs[i], ndescs);
 		unimsg_close(socks[i]);
 	}
 

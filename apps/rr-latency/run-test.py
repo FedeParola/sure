@@ -6,9 +6,9 @@ import time
 
 curdir = os.path.dirname(__file__)
 
-TARGETS		  = ['radiobox', 'radiobox-buf-reuse', 'localhost', 'bridge',
-		     'unix', 'skmsg', 'unikraft', 'unikraft-ovs', 'osv',
-		     'osv-ovs']
+TARGETS		  = ['radiobox', 'radiobox-buf-reuse', 'localhost',
+		     'localhost-sidecar', 'bridge', 'unix', 'skmsg', 'unikraft',
+		     'unikraft-ovs', 'osv', 'osv-ovs']
 TARGET		  = 'radiobox'
 OSV_PATH	  = '/users/fparola/src/osv'
 RUNS		  = 10
@@ -20,12 +20,12 @@ TESTS_GAP	  = 5 # Seconds of gap between two tests
 SAR_SECS	  = 5 # Must guarantee that the test won't end before sar
 SERVER_COMMANDS = {
 	'radiobox': ['sudo', './radiobox/run_vm.sh', '1'],
-	'radiobox-buf-reuse': ['sudo', './radiobox/run_vm.sh', '1'],
-	'localhost': ['./process/build/rr-latency'],
+	'radiobox-buf-reuse': ['sudo', './radiobox/run_vm.sh', '1', '-r'],
+	'localhost': ['./process/build/rr-latency', '-l'],
 	'bridge': ['sudo', 'ip', 'netns', 'exec', 'ns1',
 		   './process/build/rr-latency'],
-	'unix': ['./process/build/rr-latency'],
-	'skmsg': ['sudo', './process/build/rr-latency'],
+	'unix': ['./process/build/rr-latency', '-u'],
+	'skmsg': ['sudo', './process/build/rr-latency', '-l', '-m'],
 	'unikraft': ['sudo', './unikraft/run_server.sh'],
 	'unikraft-ovs': ['sudo', './unikraft/run_server_ovs.sh'],
 	'osv': ['sudo', OSV_PATH + '/modules/rr-latency/run_server.sh'],
@@ -33,28 +33,16 @@ SERVER_COMMANDS = {
 }
 CLIENT_COMMANDS = {
 	'radiobox': ['sudo', './radiobox/run_vm.sh', '2'],
-	'radiobox-buf-reuse': ['sudo', './radiobox/run_vm.sh', '2'],
-	'localhost': ['./process/build/rr-latency'],
+	'radiobox-buf-reuse': ['sudo', './radiobox/run_vm.sh', '2', '-r'],
+	'localhost': ['./process/build/rr-latency', '-l'],
 	'bridge': ['sudo', 'ip', 'netns', 'exec', 'ns2',
 		   './process/build/rr-latency'],
-	'unix': ['./process/build/rr-latency'],
-	'skmsg': ['sudo', './process/build/rr-latency'],
+	'unix': ['./process/build/rr-latency', '-u'],
+	'skmsg': ['sudo', './process/build/rr-latency', '-l', '-m'],
 	'unikraft': ['sudo', './unikraft/run_client.sh'],
 	'unikraft-ovs': ['sudo', './unikraft/run_client_ovs.sh'],
 	'osv': ['sudo', OSV_PATH + '/modules/rr-latency/run_client.sh'],
 	'osv-ovs': ['sudo', OSV_PATH + '/modules/rr-latency/run_client_ovs.sh'],
-}
-FLAGS = {
-	'radiobox': [],
-	'radiobox-buf-reuse': ['-r'],
-	'localhost': ['-l'],
-	'bridge': [],
-	'unix': ['-u'],
-	'skmsg': ['-l', '-m'],
-	'unikraft': [],
-	'unikraft-ovs': [],
-	'osv': [],
-	'osv-ovs': [],
 }
 
 out = open(RES_FILENAME, 'w')
@@ -63,10 +51,10 @@ out.write('run,msg-size,rr-latency,user,system,softirq,guest,idle\n')
 for size in SIZES:
 	for run in range(RUNS):
 		server_cmd = ['taskset', '1'] + SERVER_COMMANDS[TARGET] \
-			     + ['-s', str(size)] + FLAGS[TARGET]
+			     + ['-s', str(size)]
 		client_cmd = ['taskset', '2'] + CLIENT_COMMANDS[TARGET] + ['-c',
 			     '-i', str(RR_ITERATIONS), '-s', str(size), '-w',
-			     str(WARMUP_ITERATIONS)] + FLAGS[TARGET]	
+			     str(WARMUP_ITERATIONS)]
 
 		print(f'Run {run}: exchanging {RR_ITERATIONS} rrs of size {size}...')
 

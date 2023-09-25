@@ -7,6 +7,7 @@
 #include <linux/limits.h>
 #include <netinet/in.h>
 #include <poll.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -37,6 +38,7 @@ static int opt_server_addr = SERVER_ADDR;
 static unsigned opt_http = 0;
 static unsigned http_body_size;
 static uint16_t opt_port = DEFAULT_PORT;
+static volatile int stop = 0;
 static struct option long_options[] = {
 	{"duration", required_argument, 0, 'd'},
 	{"size", required_argument, 0, 's'},
@@ -444,10 +446,11 @@ static void server(char *path)
 	printf("Socket listening\n");
 
 	unsigned long rrs = 0;
-	struct timespec start, stop;
+	struct timespec start, end;
 
 	do {
-		if (poll(pollfds, nsocks, -1) <= 0) {
+		/* Server poll() can be interrupted by a singal */
+		if (poll(pollfds, nsocks, -1) <= 0 && errno != EINTR) {
 			fprintf(stderr, "Error polling: %s\n", strerror(errno));
 			exit(1);
 		}
@@ -496,25 +499,36 @@ static void server(char *path)
 			fprintf(stderr, "Unexpected event on socket\n");
 			exit(1);
 		}
-	} while (nsocks > 1);
+	} while (nsocks > 1 && !stop);
 
 	close(pollfds[0].fd);
 	if (opt_unix)
 		unlink(SOCKET_PATH);
 
-	clock_gettime(CLOCK_MONOTONIC, &stop);
-	unsigned long elapsed = elapsed = (stop.tv_sec - start.tv_sec)
+	clock_gettime(CLOCK_MONOTONIC, &end);
+	unsigned long elapsed = elapsed = (end.tv_sec - start.tv_sec)
 					  * 1000000000
-					  + stop.tv_nsec - start.tv_nsec;
+					  + end.tv_nsec - start.tv_nsec;
 
 	printf("Sockets closed\n");
 
 	printf("rrs=%lu\nrps=%lu\n", rrs, rrs * 1000000000 / elapsed);
 }
 
+static void sigint_handler(int signum)
+{
+	stop = 1;
+}
+
 int main(int argc, char *argv[])
 {
 	parse_command_line(argc, argv);
+
+	if (signal(SIGINT, sigint_handler)) {
+		fprintf(stderr, "Error setting signal handler: %s\n",
+			strerror(errno));
+		return 1;
+	}
 
 	if (opt_connections)
 		client();

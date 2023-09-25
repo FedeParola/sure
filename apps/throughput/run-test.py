@@ -20,54 +20,45 @@ TESTS_GAP	  = 5 # Seconds of gap between two tests
 SAR_SECS	  = 5 # Must guarantee that the test won't end before sar
 SERVER_COMMANDS = {
 	'radiobox': ['sudo', './radiobox/run_vm.sh', '1'],
-	'radiobox-buf-reuse': ['sudo', './radiobox/run_vm.sh', '1'],
-	'localhost': ['./process/build/throughput'],
+	'radiobox-buf-reuse': ['sudo', './radiobox/run_vm.sh', '1', '-r'],
+	'localhost': ['./process/build/throughput', '-l'],
 	'bridge': ['sudo', 'ip', 'netns', 'exec', 'ns1',
 		   './process/build/throughput'],
-	'unix': ['./process/build/throughput'],
-	'skmsg': ['sudo', './process/build/throughput'],
+	'unix': ['./process/build/throughput', '-u'],
+	'skmsg': ['sudo', './process/build/throughput', '-l', '-m'],
 	'unikraft': ['sudo', './unikraft/run_vm.sh', '1'],
 	'unikraft-ovs': ['sudo', './unikraft/run_vm_ovs.sh', '1'],
 	'osv': ['sudo', OSV_PATH + '/modules/throughput/run_vm.sh', '1'],
-	'osv-ovs': ['sudo', OSV_PATH + '/modules/throughput/run_vm_ovs.sh', '1'],
+	'osv-ovs': ['sudo', OSV_PATH + '/modules/throughput/run_vm_ovs.sh',
+		    '1'],
 }
 CLIENT1_COMMANDS = {
 	'radiobox': ['sudo', './radiobox/run_vm.sh', '2'],
-	'radiobox-buf-reuse': ['sudo', './radiobox/run_vm.sh', '2'],
-	'localhost': ['./process/build/throughput'],
+	'radiobox-buf-reuse': ['sudo', './radiobox/run_vm.sh', '2', '-r'],
+	'localhost': ['./process/build/throughput', '-l'],
 	'bridge': ['sudo', 'ip', 'netns', 'exec', 'ns2',
 		   './process/build/throughput'],
-	'unix': ['./process/build/throughput'],
-	'skmsg': ['sudo', './process/build/throughput'],
+	'unix': ['./process/build/throughput', '-u'],
+	'skmsg': ['sudo', './process/build/throughput', '-l', '-m'],
 	'unikraft': ['sudo', './unikraft/run_vm_ovs.sh', '2'],
 	'unikraft-ovs': ['sudo', './unikraft/run_vm_ovs.sh', '2'],
 	'osv': ['sudo', OSV_PATH + '/modules/throughput/run_vm.sh', '2'],
-	'osv-ovs': ['sudo', OSV_PATH + '/modules/throughput/run_vm_ovs.sh', '2'],
+	'osv-ovs': ['sudo', OSV_PATH + '/modules/throughput/run_vm_ovs.sh',
+		    '2'],
 }
 CLIENT2_COMMANDS = {
 	'radiobox': ['sudo', './radiobox/run_vm.sh', '3'],
-	'radiobox-buf-reuse': ['sudo', './radiobox/run_vm.sh', '3'],
-	'localhost': ['./process/build/throughput'],
+	'radiobox-buf-reuse': ['sudo', './radiobox/run_vm.sh', '3', '-r'],
+	'localhost': ['./process/build/throughput', '-l'],
 	'bridge': ['sudo', 'ip', 'netns', 'exec', 'ns3',
 		   './process/build/throughput'],
-	'unix': ['./process/build/throughput'],
-	'skmsg': ['sudo', './process/build/throughput'],
+	'unix': ['./process/build/throughput', '-u'],
+	'skmsg': ['sudo', './process/build/throughput', '-l', '-m'],
 	'unikraft': ['sudo', './unikraft/run_vm.sh', '3'],
 	'unikraft-ovs': ['sudo', './unikraft/run_vm_ovs.sh', '3'],
 	'osv': ['sudo', OSV_PATH + '/modules/throughput/run_vm.sh', '3'],
-	'osv-ovs': ['sudo', OSV_PATH + '/modules/throughput/run_vm_ovs.sh', '3'],
-}
-FLAGS = {
-	'radiobox': [],
-	'radiobox-buf-reuse': ['-r'],
-	'localhost': ['-l'],
-	'bridge': [],
-	'unix': ['-u'],
-	'skmsg': ['-l', '-m'],
-	'unikraft': [],
-	'unikraft-ovs': [],
-	'osv': [],
-	'osv-ovs': [],
+	'osv-ovs': ['sudo', OSV_PATH + '/modules/throughput/run_vm_ovs.sh', 
+		    '3'],
 }
 
 out = open(RES_FILENAME, 'w')
@@ -76,13 +67,13 @@ out.write('run,concurrency,msg-size,rps\n')
 for concurrency in CONCURRENCIES:
 	for run in range(RUNS):
 		server_cmd = ['taskset', '1'] + SERVER_COMMANDS[TARGET] + ['-s',
-			     str(MSG_SIZE)] + FLAGS[TARGET]
+			     str(MSG_SIZE)]
 		client1_cmd = ['taskset', '2'] + CLIENT1_COMMANDS[TARGET] + \
 			      ['-c', str(concurrency), '-d', str(DURATION),
-			       '-s', str(MSG_SIZE)] + FLAGS[TARGET]
+			       '-s', str(MSG_SIZE)]
 		client2_cmd = ['taskset', '4'] + CLIENT2_COMMANDS[TARGET] + \
 			      ['-c', str(concurrency), '-d', str(DURATION),
-			       '-s', str(MSG_SIZE)] + FLAGS[TARGET]	
+			       '-s', str(MSG_SIZE)]
 
 		print(f'Run {run}: running {concurrency * 2} connections with message size {MSG_SIZE}...')
 

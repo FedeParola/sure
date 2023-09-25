@@ -226,7 +226,7 @@ static void do_client_rr(int s)
 		} while (size < 0 && opt_busy_poll && errno == EAGAIN);
 		if (size > 0)
 			rsize += size;
-	} while (rsize < opt_size && size > 0);
+	} while (!opt_http && rsize < opt_size && size > 0);
 	if (!opt_http && rsize != opt_size) {
 		fprintf(stderr, "Error receiving message: %s\n",
 			strerror(errno));
@@ -516,7 +516,7 @@ static void server(int s, char *path)
 			} while (rc < 0 && opt_busy_poll && errno == EAGAIN);
 			if (rc > 0)
 				rsize += rc;
-		} while (rsize < opt_size && rc > 0);
+		} while (!opt_http && rsize < opt_size && rc > 0);
 		if (rc == 0) {
 			break;
 		} else if (rc < 0) {

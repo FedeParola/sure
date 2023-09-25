@@ -1,3 +1,4 @@
+#include <getopt.h>
 #include <iostream>
 #include <map>
 #include <rapidjson/document.h>
@@ -17,17 +18,21 @@
 #include <vector>
 
 #define PORT 4560
-#define QP_ADDR 1
+#define QP_ADDR 2
 #define QP_PORT 4580
-#define RC_ADDR 2
+#define RC_ADDR 3
 #define RC_PORT 5000
-#define ITERATIONS 20
 
+static unsigned opt_iterations = 0;
 static int downlink_threshold = 0;  // A1 policy type 20008 (in percentage)
 static struct unimsg_sock *ad_sock;
 static struct unimsg_sock *qp_sock;
 static unsigned it = 0;
 static unsigned long total_latency = 0;
+static struct option long_options[] = {
+	{"iterations", required_argument, 0, 'i'},
+	{0, 0, 0, 0}
+};
 
 using namespace rapidjson;
 using namespace std;
@@ -121,6 +126,41 @@ struct AnomalyHandler : public BaseReaderHandler<UTF8<>, AnomalyHandler> {
 	}
 };
 
+static void usage(const char *prog)
+{
+	fprintf(stderr,
+		"  Usage: %s [OPTIONS]\n"
+		"  Options:\n"
+		"  -i, --iterations	Number of control loop iterations\n",
+		prog);
+
+	exit(1);
+}
+
+static void parse_command_line(int argc, char **argv)
+{
+	int option_index, c;
+
+	for (;;) {
+		c = getopt_long(argc, argv, "i:", long_options, &option_index);
+		if (c == -1)
+			break;
+
+		switch (c) {
+		case 'i':
+			opt_iterations = atoi(optarg);
+			break;
+		default:
+			usage(argv[0]);
+		}
+	}
+
+	if (!opt_iterations) {
+		fprintf(stderr, "Iterations option must be > 0\n");
+		usage(argv[0]);
+	}
+}
+
 struct rest_resp {
 	unsigned status_code;
 	char *body;
@@ -153,7 +193,7 @@ static struct rest_resp do_post(__u32 addr, __u16 port, string url, string body)
 		exit(1);
 	}
 
-	rc = unimsg_buffer_get(&desc);
+	rc = unimsg_buffer_get(&desc, 1);
 	if (rc) {
 		fprintf(stderr, "Error getting buffer: %s\n", strerror(-rc));
 		exit(1);
@@ -163,13 +203,14 @@ static struct rest_resp do_post(__u32 addr, __u16 port, string url, string body)
 		body.size(), body.c_str());
 	desc.size = strlen((char *)desc.addr);
 
-	rc = unimsg_send(rc_sock, &desc, 0);
+	rc = unimsg_send(rc_sock, &desc, 1, 0);
 	if (rc) {
 		fprintf(stderr, "Error sending desc: %s\n", strerror(-rc));
 		exit(1);
 	}
 
-	rc = unimsg_recv(rc_sock, &desc, 0);
+	unsigned ndescs = 1;
+	rc = unimsg_recv(rc_sock, &desc, &ndescs, 0);
 	if (rc) {
 		fprintf(stderr, "Error receiving desc: %s\n", strerror(-rc));
 		exit(1);
@@ -288,7 +329,7 @@ void send_rest_control_request(string ue_id, string serving_cell_id,
 		     << "\n[ERROR] HTTP payload is " << resp.body << endl;
 	}
 
-	unimsg_buffer_put(&resp.desc);
+	unimsg_buffer_put(&resp.desc, 1);
 }
 
 void prediction_callback(struct unimsg_shm_desc desc)
@@ -297,9 +338,9 @@ void prediction_callback(struct unimsg_shm_desc desc)
 
 	// cout << "[INFO] Prediction Callback got a message, length=" << desc.size
 	//      << "\n";
-	// cout << "[INFO] Payload is " << json << endl;
+	// 	cout << "[INFO] Payload is " << json << endl;
 
-	unimsg_buffer_put(&desc);
+	unimsg_buffer_put(&desc, 1);
 
 	PredictionHandler handler;
 	try {
@@ -364,7 +405,7 @@ void send_prediction_request(vector<string> ues_to_predict)
 	struct unimsg_shm_desc desc;
 	int rc;
 
-	rc = unimsg_buffer_get(&desc);
+	rc = unimsg_buffer_get(&desc, 1);
 	if (rc) {
 		fprintf(stderr, "Error getting buffer: %s\n", strerror(-rc));
 		exit(1);
@@ -384,19 +425,21 @@ void send_prediction_request(vector<string> ues_to_predict)
 	string message_body = "{\"UEPredictionSet\": " + ues_list + "}";
 
 	/* TODO: evaluate building payload in place */
+	/* TODO: handle message spanning multiple descs */
 	memcpy(desc.addr, message_body.c_str(), message_body.size());
 	desc.size = message_body.size();
 
 	// cout << "[INFO] Prediction Request length=" << desc.size << ", payload="
 	//      << message_body << endl;
 
-	rc = unimsg_send(qp_sock, &desc, 0);
+	rc = unimsg_send(qp_sock, &desc, 1, 0);
 	if (rc) {
 		fprintf(stderr, "Error sending desc: %s\n", strerror(-rc));
 		exit(1);
 	}
 
-	rc = unimsg_recv(qp_sock, &desc, 0);
+	unsigned ndescs = 1;
+	rc = unimsg_recv(qp_sock, &desc, &ndescs, 0);
 	if (rc) {
 		fprintf(stderr, "Error receiving desc: %s\n", strerror(-rc));
 		exit(1);
@@ -410,9 +453,10 @@ void send_prediction_request(vector<string> ues_to_predict)
  * xApp, sends an ACK with same UEID as payload to AD xApp, and sends a
  * prediction request to the QP Driver xApp.
  */
-void ad_callback(struct unimsg_shm_desc desc)
+void ad_callback(struct unimsg_shm_desc *descs, unsigned ndescs)
 {
-	string json ((char *)desc.addr, desc.size);
+	/* TODO: handle message spread across multiple descs */
+	string json ((char *)descs[0].addr, descs[0].size);
 
 	// cout << "[INFO] AD Callback got a message, length=" << desc.size
 	//      << "\n";
@@ -426,7 +470,7 @@ void ad_callback(struct unimsg_shm_desc desc)
 	send_prediction_request(handler.prediction_ues);
 
 	/* Send the same message back as ACK */
-	int rc = unimsg_send(ad_sock, &desc, 0);
+	int rc = unimsg_send(ad_sock, descs, ndescs, 0);
 	if (rc) {
 		fprintf(stderr, "Error receiving desc: %s\n", strerror(-rc));
 		exit(1);
@@ -437,6 +481,8 @@ int main(int argc, char *argv[])
 {
 	struct unimsg_sock *lsock;
 	int rc;
+
+	parse_command_line(argc, argv);
 
 	rc = unimsg_socket(&lsock);
 	if (rc) {
@@ -484,23 +530,24 @@ int main(int argc, char *argv[])
 
 	cout << "[INFO] Connection to QP established\n";
 
-	for (int i = 0; i < ITERATIONS; i++) {
-		struct unimsg_shm_desc desc;
-		rc = unimsg_recv(ad_sock, &desc, 0);
+	for (unsigned i = 0; i < opt_iterations; i++) {
+		struct unimsg_shm_desc descs[UNIMSG_MAX_DESCS_BULK];
+		unsigned ndescs = 1;
+		rc = unimsg_recv(ad_sock, descs, &ndescs, 0);
 		if (rc) {
 			fprintf(stderr, "Error receiving desc: %s\n",
 				strerror(-rc));
 			exit(1);
 		}
 
-		ad_callback(desc);
+		ad_callback(descs, ndescs);
 	}
 
 	unimsg_close(qp_sock);
 	unimsg_close(ad_sock);
 
 	// cout << "[TS] Average POST latency (excluding 1st iteration) "
-	//      << (total_latency / (ITERATIONS - 1)) << " ns\n";
+	//      << (total_latency / (opt_iterations - 1)) << " ns\n";
 
 	return 0;
 }

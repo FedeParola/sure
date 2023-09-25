@@ -1,3 +1,4 @@
+#include <getopt.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -5,7 +6,12 @@
 #include <unimsg/net.h>
 
 #define PORT 5000
-#define ITERATIONS 20
+
+static unsigned opt_iterations = 0;
+static struct option long_options[] = {
+	{"iterations", required_argument, 0, 'i'},
+	{0, 0, 0, 0}
+};
 
 static char expected_req[] = "POST /api/echo HTTP/1.1\r\n";
 static char resp_template[] = "HTTP/1.1 200 OK\r\n"
@@ -17,10 +23,48 @@ static char resp_template[] = "HTTP/1.1 200 OK\r\n"
 			      "\r\n"
 			      "%s"; /* body */
 
-int main()
+
+static void usage(const char *prog)
+{
+	fprintf(stderr,
+		"  Usage: %s [OPTIONS]\n"
+		"  Options:\n"
+		"  -i, --iterations	Number of control loop iterations\n",
+		prog);
+
+	exit(1);
+}
+
+static void parse_command_line(int argc, char **argv)
+{
+	int option_index, c;
+
+	for (;;) {
+		c = getopt_long(argc, argv, "i:", long_options, &option_index);
+		if (c == -1)
+			break;
+
+		switch (c) {
+		case 'i':
+			opt_iterations = atoi(optarg);
+			break;
+		default:
+			usage(argv[0]);
+		}
+	}
+
+	if (!opt_iterations) {
+		fprintf(stderr, "Iterations option must be > 0\n");
+		usage(argv[0]);
+	}
+}
+
+int main(int argc, char *argv[])
 {
 	int rc;
 	struct unimsg_sock *lsock, *sock;
+
+	parse_command_line(argc, argv);
 
 	rc = unimsg_socket(&lsock);
 	if (rc) {
@@ -43,7 +87,7 @@ int main()
 
 	printf("[RC] Waiting for TS connections\n");
 
-	for (int i = 0; i < ITERATIONS; i++) {
+	for (unsigned i = 0; i < opt_iterations; i++) {
 		rc = unimsg_accept(lsock, &sock, 0);
 		if (rc) {
 			fprintf(stderr, "Error accepting connection: %s\n",
@@ -52,7 +96,8 @@ int main()
 		}
 
 		struct unimsg_shm_desc desc;
-		rc = unimsg_recv(sock, &desc, 0);
+		unsigned ndescs = 1;
+		rc = unimsg_recv(sock, &desc, &ndescs, 0);
 		if (rc) {
 			fprintf(stderr, "Error receiving desc: %s\n",
 				strerror(-rc));
@@ -87,7 +132,7 @@ int main()
 		}
 
 		struct unimsg_shm_desc resp;
-		rc = unimsg_buffer_get(&resp);
+		rc = unimsg_buffer_get(&resp, 1);
 		if (rc) {
 			fprintf(stderr, "Error getting buffer: %s\n",
 				strerror(-rc));
@@ -98,9 +143,9 @@ int main()
 			body);
 		resp.size = strlen((char *)desc.addr);
 
-		unimsg_buffer_put(&desc);
+		unimsg_buffer_put(&desc , 1);
 
-		rc = unimsg_send(sock, &resp, 0);
+		rc = unimsg_send(sock, &resp, 1, 0);
 		if (rc) {
 			fprintf(stderr, "Error sending desc: %s\n",
 				strerror(-rc));

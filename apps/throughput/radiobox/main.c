@@ -140,22 +140,16 @@ static void client_send(struct unimsg_sock *s, unsigned id)
 		}
 	}
 
-	// printf("Got buffers\n");
-
 	for (unsigned i = 0; i < ndescs; i++)
 		*(char *)descs[id][i].addr = 0;
 	if (opt_http)
 		strcpy(descs[id][0].addr, http_req);
-
-	// printf("Touched buffers\n");
 
 	rc = unimsg_send(s, descs[id], ndescs, 1);
 	if (rc) {
 		fprintf(stderr, "Error sending descs: %s\n", strerror(-rc));
 		exit(1);
 	}
-
-	// printf("Sent buffers\n");
 }
 
 static void client_recv(struct unimsg_sock *s, unsigned id, int nonblock)
@@ -175,17 +169,11 @@ static void client_recv(struct unimsg_sock *s, unsigned id, int nonblock)
 		exit(1);
 	}
 
-	// printf("Rcvd buffers\n");
-
 	for (unsigned i = 0; i < ndescs; i++)
 		*(char *)descs[id][i].addr = 0;
 
-	// printf("Touched buffers\n");
-
 	if (!opt_buffers_reuse)
 		unimsg_buffer_put(descs[id], ndescs);
-
-	// printf("Released buffers\n");
 }
 
 static void client()
@@ -281,10 +269,29 @@ static int do_server_rr(struct unimsg_sock *s)
 
 	for (unsigned i = 0; i < nrecv; i++)
 		*(char *)descs[i].addr = 0;
-	if (opt_http)
-		sprintf(descs[0].addr, http_resp, http_body_size);
 
-	rc = unimsg_send(s, descs, nrecv, 1);
+	unsigned nsend = nrecv;
+	if (opt_http) {
+		nsend = (opt_size - 1) / UNIMSG_BUFFER_AVAILABLE + 1;
+		if (nsend > nrecv) {
+			rc = unimsg_buffer_get(&descs[nrecv], nsend - nrecv);
+			if (rc) {
+				fprintf(stderr, "Error getting shm buffer: "
+					"%s\n",	strerror(-rc));
+				ERR_CLOSE(s);
+			}
+
+		} else if (nsend < nrecv) {
+			unimsg_buffer_put(&descs[nsend], nrecv - nsend);
+		}
+
+		sprintf(descs[0].addr, http_resp, http_body_size);
+		for (unsigned i = 0; i < nsend - 1; i++)
+			descs[i].size = UNIMSG_BUFFER_AVAILABLE;
+		descs[nsend - 1].size = opt_size % UNIMSG_BUFFER_AVAILABLE;
+	}
+
+	rc = unimsg_send(s, descs, nsend, 1);
 	if (rc) {
 		fprintf(stderr, "Error sending desc: %s\n", strerror(-rc));
 		exit(1);
@@ -362,7 +369,7 @@ static void server()
 				exit(1);
 			}
 			
-			if (nsocks == 1) {
+			if (!started) {
 				printf("Handling connections\n");
 				started = 1;
 				start = ukplat_monotonic_clock();
@@ -370,7 +377,7 @@ static void server()
 
 			socks[nsocks++] = s;
 		}
-	} while (nsocks > 1 || started == 0);
+	} while (nsocks > 1 || !started);
 
 	unimsg_close(socks[0]);
 

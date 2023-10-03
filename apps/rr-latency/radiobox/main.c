@@ -356,21 +356,42 @@ static void server(struct unimsg_sock *s)
 
 		for (unsigned i = 0; i < nrecv; i++)
 			*(char *)descs[i].addr = 0;
-		if (opt_http)
+
+		unsigned nsend = nrecv;
+		if (opt_http) {
+			nsend = (opt_size - 1) / UNIMSG_BUFFER_AVAILABLE + 1;
+			if (nsend > nrecv) {
+				rc = unimsg_buffer_get(&descs[nrecv],
+						       nsend - nrecv);
+				if (rc) {
+					fprintf(stderr, "Error getting shm "
+						"buffer: %s\n",	strerror(-rc));
+					ERR_CLOSE(s);
+				}
+
+			} else if (nsend < nrecv) {
+				unimsg_buffer_put(&descs[nsend], nrecv - nsend);
+			}
+
 			sprintf(descs[0].addr, http_resp, http_body_size);
+			for (unsigned i = 0; i < nsend - 1; i++)
+				descs[i].size = UNIMSG_BUFFER_AVAILABLE;
+			descs[nsend - 1].size
+				= opt_size % UNIMSG_BUFFER_AVAILABLE;
+		}
 
 		do {
 			STORE_TIME(start);
-			rc = unimsg_send(s, descs, nrecv, opt_busy_poll);
+			rc = unimsg_send(s, descs, nsend, opt_busy_poll);
 			STORE_TIME(stop);
 		} while (opt_busy_poll && rc == -EAGAIN);
 		if (rc == -ECONNRESET) {
-			unimsg_buffer_put(descs, nrecv);
+			unimsg_buffer_put(descs, nsend);
 			break;
 		} else if (rc) {
 			fprintf(stderr, "Error sending desc: %s\n",
 				strerror(-rc));
-			ERR_PUT(descs, nrecv, s);
+			ERR_PUT(descs, nsend, s);
 		}
 
 #ifdef ADDITIONAL_STATS

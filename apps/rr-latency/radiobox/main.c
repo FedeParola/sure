@@ -9,7 +9,7 @@
 #define DEFAULT_SIZE 64
 #define DEFAULT_WARMUP 0
 #define DEFAULT_DELAY 0
-#define SERVER_ADDR 1
+#define SERVER_ADDR 0x0100000a /* 10.0.0.1 */
 #define SERVER_PORT 5000
 #define ERR_CLOSE(s) ({ unimsg_close(s); exit(1); })
 #define ERR_PUT(descs, ndescs, s) ({					\

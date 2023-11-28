@@ -96,7 +96,7 @@ void prediction_callback(struct unimsg_shm_desc desc)
 		now = ukplat_monotonic_clock();
 	while (now - start < tot_pred_time);
 
-	printf("Started at %lu, stopped ad %lu\n", start, now);
+	// printf("Started at %lu, stopped at %lu\n", start, now);
 
 	/* We want to create:
 	 * {

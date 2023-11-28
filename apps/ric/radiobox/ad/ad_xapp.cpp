@@ -7,7 +7,7 @@
 #include <uk/plat/time.h>
 
 #define UNIMSG_BUFFER_AVAILABLE (UNIMSG_BUFFER_SIZE - UNIMSG_BUFFER_HEADROOM)
-#define TS_ADDR 1
+#define TS_ADDR 0x0100000a /* 10.0.0.1 */
 #define TS_PORT 4560
 
 using namespace std;
@@ -32,7 +32,7 @@ static void usage(const char *prog)
 		"  -i, --iterations		Number of control loop iterations\n"
 		"  -r, --ue-records		Number of ue record read at each iteration\n"
 		"  -a, --anomaly-rate		Fraction of ue records represening an anomaly\n"
-		"  -p, --prediction-time	Emulated prediciton time (ms) (default 0)\n",
+		"  -p, --prediction-time		Emulated prediciton time (ms) (default 0)\n",
 		prog);
 
 	exit(1);
@@ -126,7 +126,7 @@ int main(int argc, char *argv[])
 			now = ukplat_monotonic_clock();
 		while (now - start < opt_prediciton_time * 1000000);
 
-		// printf("Started at %lu, stopped ad %lu\n", start, now);
+		// printf("Started at %lu, stopped at %lu\n", start, now);
 
 		std::string ad_msg = "[";
 		unsigned anomaly_records = opt_ue_records * opt_anomaly_rate

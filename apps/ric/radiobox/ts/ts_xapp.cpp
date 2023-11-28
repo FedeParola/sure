@@ -18,9 +18,9 @@
 #include <vector>
 
 #define PORT 4560
-#define QP_ADDR 2
+#define QP_ADDR 0x0200000a /* 10.0.0.2 */
 #define QP_PORT 4580
-#define RC_ADDR 3
+#define RC_ADDR 0x0300000a /* 10.0.0.3 */
 #define RC_PORT 5000
 
 static unsigned opt_iterations = 0;

@@ -3,3 +3,4 @@ config APPTHROUGHPUT_DEPENDENCIES
 	bool
 	default y
 	select LIBLWIP
+	select LIBPOSIX_EVENT

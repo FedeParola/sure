@@ -40,7 +40,7 @@ CLIENT1_COMMANDS = {
 		   './process/build/throughput'],
 	'unix': ['./process/build/throughput', '-u'],
 	'skmsg': ['sudo', './process/build/throughput', '-l', '-m'],
-	'unikraft': ['sudo', './unikraft/run_vm_ovs.sh', '2'],
+	'unikraft': ['sudo', './unikraft/run_vm.sh', '2'],
 	'unikraft-ovs': ['sudo', './unikraft/run_vm_ovs.sh', '2'],
 	'osv': ['sudo', OSV_PATH + '/modules/throughput/run_vm.sh', '2'],
 	'osv-ovs': ['sudo', OSV_PATH + '/modules/throughput/run_vm_ovs.sh',

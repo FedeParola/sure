@@ -1,0 +1,42 @@
+diff --git a/hw/misc/ivshmem.c b/hw/misc/ivshmem.c
+index d66d912172..aeff5b8a38 100644
+--- a/hw/misc/ivshmem.c
++++ b/hw/misc/ivshmem.c
+@@ -43,7 +43,7 @@
+ #define PCI_VENDOR_ID_IVSHMEM   PCI_VENDOR_ID_REDHAT_QUMRANET
+ #define PCI_DEVICE_ID_IVSHMEM   0x1110
+ 
+-#define IVSHMEM_MAX_PEERS UINT16_MAX
++#define IVSHMEM_MAX_PEERS 244 /* available bytes in BAR0 */
+ #define IVSHMEM_IOEVENTFD   0
+ #define IVSHMEM_MSI     1
+ 
+@@ -363,20 +363,20 @@ static void watch_vector_notifier(IVShmemState *s, EventNotifier *n,
+ static void ivshmem_add_eventfd(IVShmemState *s, int posn, int i)
+ {
+     memory_region_add_eventfd(&s->ivshmem_mmio,
+-                              DOORBELL,
+-                              4,
+-                              true,
+-                              (posn << 16) | i,
++                              DOORBELL + posn,
++                              0,
++                              false,
++                              0,
+                               &s->peers[posn].eventfds[i]);
+ }
+ 
+ static void ivshmem_del_eventfd(IVShmemState *s, int posn, int i)
+ {
+     memory_region_del_eventfd(&s->ivshmem_mmio,
+-                              DOORBELL,
+-                              4,
+-                              true,
+-                              (posn << 16) | i,
++                              DOORBELL + posn,
++                              0,
++                              false,
++                              0,
+                               &s->peers[posn].eventfds[i]);
+ }
+ 

@@ -19,8 +19,8 @@ SIZES		  = [64, 4096, 8192]
 TESTS_GAP	  = 5 # Seconds of gap between two tests
 SAR_SECS	  = 5 # Must guarantee that the test won't end before sar
 SERVER_COMMANDS = {
-	'radiobox': ['sudo', './radiobox/run_vm.sh', '1'],
-	'radiobox-buf-reuse': ['sudo', './radiobox/run_vm.sh', '1', '-r'],
+	'radiobox': ['sudo', './radiobox/run.sh', '1'],
+	'radiobox-buf-reuse': ['sudo', './radiobox/run.sh', '1', '-r'],
 	'localhost': ['./process/build/rr-latency', '-l'],
 	'bridge': ['sudo', 'ip', 'netns', 'exec', 'ns1',
 		   './process/build/rr-latency'],
@@ -32,8 +32,8 @@ SERVER_COMMANDS = {
 	'osv-ovs': ['sudo', OSV_PATH + '/modules/rr-latency/run_server_ovs.sh'],
 }
 CLIENT_COMMANDS = {
-	'radiobox': ['sudo', './radiobox/run_vm.sh', '2'],
-	'radiobox-buf-reuse': ['sudo', './radiobox/run_vm.sh', '2', '-r'],
+	'radiobox': ['sudo', './radiobox/run.sh', '2'],
+	'radiobox-buf-reuse': ['sudo', './radiobox/run.sh', '2', '-r'],
 	'localhost': ['./process/build/rr-latency', '-l'],
 	'bridge': ['sudo', 'ip', 'netns', 'exec', 'ns2',
 		   './process/build/rr-latency'],

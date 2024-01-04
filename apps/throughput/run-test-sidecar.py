@@ -18,18 +18,18 @@ MSG_SIZES	  = [256, 4096, 8192]
 TESTS_GAP	  = 5 # Seconds of gap between two tests
 SAR_SECS	  = 5 # Must guarantee that the test won't end before sar
 SERVER_COMMANDS = {
-	'radiobox': ['sudo', './radiobox/run_vm.sh', '1', '-h'],
+	'radiobox': ['sudo', './radiobox/run.sh', '1', '-h'],
 	'localhost': ['./process/build/throughput', '-l', '-h'],
 	'localhost-sidecar': ['./process/build/throughput', '-l', '-h'],
 }
 CLIENT1_COMMANDS = {
-	'radiobox': ['sudo', './radiobox/run_vm.sh', '2', '-h'],
+	'radiobox': ['sudo', './radiobox/run.sh', '2', '-h'],
 	'localhost': ['./process/build/throughput', '-l', '-h'],
 	'localhost-sidecar': ['./process/build/throughput', '-l', '-h',
 		       	      '-p', '80'],
 }
 CLIENT2_COMMANDS = {
-	'radiobox': ['sudo', './radiobox/run_vm.sh', '3', '-h'],
+	'radiobox': ['sudo', './radiobox/run.sh', '3', '-h'],
 	'localhost': ['./process/build/throughput', '-l', '-h'],
 	'localhost-sidecar': ['./process/build/throughput', '-l', '-h',
 		       	      '-p', '80'],

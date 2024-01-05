@@ -95,3 +95,28 @@ The address of the VM will be computed as `10.0.0.<id>`.
 cd radiobox/apps/rr-latency/radiobox
 sudo ./run_vm.sh <id> <args>
 ```
+
+## Tuning the nodes
+
+To prevent CPU C-states and P-states form affecting measurements, the following tuning can be applied.
+Following instructions were tested on a CloudLab `c220g5` node, but should apply to all recent Intel CPUs.
+
+### Disable P-states (frequency scaling)
+Edit `/etc/default/grub` and append `intel_pstate=passive` to the `GRUB_CMDLINE_LINUX` option, then apply and reboot the machine:
+```bash
+sudo update-grub2
+sudo reboot
+```
+Disable turbo-boost:
+```bash
+echo 1 | sudo tee /sys/devices/system/cpu/intel_pstate/no_turbo
+```
+Set all cores to max frequency:
+```bash
+echo performance | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
+```
+
+### Disable C-states (idle states)
+```bash
+echo 1 | sudo tee /sys/devices/system/cpu/cpu*/cpuidle/state*/disable
+```

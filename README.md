@@ -6,6 +6,13 @@ All code blocks suppose to be executed from a common working directory.
 
 ### Building RadioBox apps
 
+Install pre-requirements:
+```bash
+sudo apt install -y python3-pip meson libglib2.0-dev libssl-dev libnuma-dev libncurses-dev flex bison
+
+pip3 install pyelftools
+```
+
 Clone RadioBox repo:
 ```bash
 git clone https://github.com/FedeParola/radiobox.git
@@ -93,7 +100,7 @@ Run the RadioBox VM (e.g., rr-latency app).
 The address of the VM will be computed as `10.0.0.<id>`.
 ```bash
 cd radiobox/apps/rr-latency/radiobox
-sudo ./run_vm.sh <id> <args>
+sudo ./run.sh <id> <args>
 ```
 
 ## Tuning the nodes

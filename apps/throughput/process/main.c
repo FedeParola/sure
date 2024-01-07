@@ -1,6 +1,8 @@
 #include <arpa/inet.h>
+#ifdef ENABLE_SK_MSG
 #include <bpf/bpf.h>
 #include <bpf/libbpf.h>
+#endif
 #include <errno.h>
 #include <getopt.h>
 #include <libgen.h>
@@ -160,6 +162,14 @@ static void parse_command_line(int argc, char **argv)
 
 		http_body_size = opt_size - sizeof(http_resp);
 	}
+
+#ifndef ENABLE_SK_MSG
+	if (opt_sk_msg) {
+		fprintf(stderr, "SK_MSG support not enabled at compilation, "
+			"please build with `make ENABLE_SK_MSG=1`\n");
+		usage(argv[0]);
+	}
+#endif
 }
 
 static void client_send(int s)
@@ -241,6 +251,7 @@ static void client()
 	}
 	printf("Sockets connected\n");
 
+#ifndef ENABLE_SK_MSG
 	// if (opt_sk_msg) {
 	// 	int sockmap_fd = bpf_obj_get(SOCKMAP_PATH);
 	// 	if (sockmap_fd < 0) {
@@ -272,6 +283,7 @@ static void client()
 
 	// 	sleep(1); /* Make sure server added his entry in the sockmap */
 	// }
+#endif
 
 	if (opt_http) {
 		opt_size = sizeof(http_req) - 1;
@@ -366,6 +378,7 @@ static void server(char *path)
 	pollfds[0].events = POLLIN;
 	printf("Socket created\n");
 
+#ifndef ENABLE_SK_MSG
 	// if (opt_sk_msg) {
 	// 	char prog_path[PATH_MAX];
 	// 	strcpy(prog_path, dirname(path));
@@ -402,6 +415,7 @@ static void server(char *path)
 	// 	}
 	// 	printf("Sockmap pinned\n");
 	// }
+#endif
 
 	int val = 1;
 	if (ioctl(pollfds[0].fd, FIONBIO, &val)) {

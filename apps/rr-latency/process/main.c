@@ -1,6 +1,8 @@
 #include <arpa/inet.h>
+#ifdef ENABLE_SK_MSG
 #include <bpf/bpf.h>
 #include <bpf/libbpf.h>
+#endif
 #include <errno.h>
 #include <getopt.h>
 #include <libgen.h>
@@ -187,6 +189,14 @@ static void parse_command_line(int argc, char **argv)
 
 		http_body_size = opt_size - sizeof(http_resp);
 	}
+
+#ifndef ENABLE_SK_MSG
+	if (opt_sk_msg) {
+		fprintf(stderr, "SK_MSG support not enabled at compilation, "
+			"please build with `make ENABLE_SK_MSG=1`\n");
+		usage(argv[0]);
+	}
+#endif
 }
 
 static void do_client_rr(int s)
@@ -269,6 +279,7 @@ static void client(int s)
 	}
 	printf("Socket connected\n");
 
+#ifdef ENABLE_SK_MSG
 	if (opt_sk_msg) {
 		int sockmap_fd = bpf_obj_get(SOCKMAP_PATH);
 		if (sockmap_fd < 0) {
@@ -300,6 +311,7 @@ static void client(int s)
 
 		sleep(1); /* Make sure server added his entry in the sockmap */
 	}
+#endif
 
 	if (opt_busy_poll) {
 		int val = 1;
@@ -378,6 +390,7 @@ static void server(int s, char *path)
 
 	printf("I'm the server\n");
 
+#ifdef ENABLE_SK_MSG
 	if (opt_sk_msg) {
 		char prog_path[PATH_MAX];
 		strcpy(prog_path, dirname(path));
@@ -414,6 +427,7 @@ static void server(int s, char *path)
 		}
 		printf("Sockmap pinned\n");
 	}
+#endif
 
 	int v = 1;
 	if (setsockopt(s, SOL_SOCKET, SO_REUSEPORT, &v, sizeof(v))) {
@@ -475,6 +489,7 @@ static void server(int s, char *path)
 		}
 	}
 
+#ifdef ENABLE_SK_MSG
 	if (opt_sk_msg) {
 		struct conn_id cid = {
 			.raddr = opt_server_addr,
@@ -492,6 +507,7 @@ static void server(int s, char *path)
 
 		printf("Socket added to sockmap\n");
 	}
+#endif
 
 	if (opt_http) {
 		printf("Handling HTTP requests with %u B replies\n",
@@ -562,6 +578,7 @@ static void server(int s, char *path)
 	close(s);
 	printf("Socket closed\n");
 
+#ifdef ENABLE_SK_MSG
 	if (opt_sk_msg) {
 		if (unlink(SOCKMAP_PATH))
 			fprintf(stderr, "Error unpinning sockmap: %s\n",
@@ -569,6 +586,7 @@ static void server(int s, char *path)
 		else
 			printf("Sockmap unpinned\n");
 	}
+#endif
 
 #ifdef ADDITIONAL_STATS
 	printf("Average send time %lu ns\n", send_time / iterations_count);

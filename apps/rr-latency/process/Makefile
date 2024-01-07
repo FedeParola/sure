@@ -1,10 +1,15 @@
-ifdef ADDITIONAL_STATS
-CFLAGS = "-D ADDITIONAL_STATS"
+ifdef ENABLE_SK_MSG
+DEPS = build/redirect.bpf.o
+CFLAGS = -lbpf -D ENABLE_SK_MSG
 endif
 
-build/rr-latency: main.c build/redirect.bpf.o
+ifdef ADDITIONAL_STATS
+CFLAGS += -D ADDITIONAL_STATS
+endif
+
+build/rr-latency: main.c $(DEPS)
 	@mkdir -p $(@D)
-	$(CC) -O2 -o $@ $< -lbpf $(CFLAGS)
+	$(CC) -O2 -o $@ $< $(CFLAGS)
 
 build/redirect.bpf.o: redirect.bpf.c
 	@mkdir -p $(@D)

@@ -1,0 +1,3 @@
+$(eval $(call addlib,apppaymentservice))
+
+APPPAYMENTSERVICE_SRCS-y += $(APPPAYMENTSERVICE_BASE)/main.c

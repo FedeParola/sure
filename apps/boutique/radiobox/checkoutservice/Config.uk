@@ -1,0 +1,5 @@
+### Invisible option for dependencies
+config APPCHECKOUTSERVICE_DEPENDENCIES
+	bool
+	default y
+	select LIBUNIMSG

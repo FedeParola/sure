@@ -1,0 +1,3 @@
+$(eval $(call addlib,apprecommendationservice))
+
+APPRECOMMENDATIONSERVICE_SRCS-y += $(APPRECOMMENDATIONSERVICE_BASE)/main.c

@@ -1,0 +1,3 @@
+$(eval $(call addlib,appcheckoutservice))
+
+APPCHECKOUTSERVICE_SRCS-y += $(APPCHECKOUTSERVICE_BASE)/main.c

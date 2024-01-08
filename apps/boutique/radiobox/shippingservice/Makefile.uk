@@ -1,0 +1,3 @@
+$(eval $(call addlib,appshippingservice))
+
+APPSHIPPINGSERVICE_SRCS-y += $(APPSHIPPINGSERVICE_BASE)/main.c

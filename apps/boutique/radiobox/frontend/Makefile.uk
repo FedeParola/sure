@@ -1,0 +1,5 @@
+$(eval $(call addlib,appfrontend))
+
+APPFRONTEND_SRCS-y += $(APPFRONTEND_BASE)/main.c
+APPFRONTEND_SRCS-y += $(APPFRONTEND_BASE)/../common/libaco/aco.c
+APPFRONTEND_SRCS-y += $(APPFRONTEND_BASE)/../common/libaco/acosw.S

@@ -1,0 +1,14 @@
+$(eval $(call addlib,appcartservice))
+
+APPCARTSERVICE_SRCS-y += $(APPCARTSERVICE_BASE)/main.c
+
+APPCARTSERVICE_SRCS-y += $(APPCARTSERVICE_BASE)/../common/cstl/src/c_algorithms.c
+APPCARTSERVICE_SRCS-y += $(APPCARTSERVICE_BASE)/../common/cstl/src/c_array.c
+APPCARTSERVICE_SRCS-y += $(APPCARTSERVICE_BASE)/../common/cstl/src/c_deque.c
+APPCARTSERVICE_SRCS-y += $(APPCARTSERVICE_BASE)/../common/cstl/src/c_map.c
+APPCARTSERVICE_SRCS-y += $(APPCARTSERVICE_BASE)/../common/cstl/src/c_rb.c
+APPCARTSERVICE_SRCS-y += $(APPCARTSERVICE_BASE)/../common/cstl/src/c_set.c
+APPCARTSERVICE_SRCS-y += $(APPCARTSERVICE_BASE)/../common/cstl/src/c_slist.c
+APPCARTSERVICE_SRCS-y += $(APPCARTSERVICE_BASE)/../common/cstl/src/c_util.c
+
+APPCARTSERVICE_CINCLUDES-y += -I$(APPCARTSERVICE_BASE)/../common/cstl/inc

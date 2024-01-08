@@ -1,0 +1,3 @@
+$(eval $(call addlib,appemailservice))
+
+APPEMAILSERVICE_SRCS-y += $(APPEMAILSERVICE_BASE)/main.c

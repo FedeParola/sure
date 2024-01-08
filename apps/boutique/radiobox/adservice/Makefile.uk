@@ -1,0 +1,3 @@
+$(eval $(call addlib,appadservice))
+
+APPADSERVICE_SRCS-y += $(APPADSERVICE_BASE)/main.c

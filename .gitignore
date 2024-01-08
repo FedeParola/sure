@@ -3,3 +3,5 @@ build/
 .config
 .config.old
 *.csv
+*.log
+__pycache__

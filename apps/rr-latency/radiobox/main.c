@@ -174,10 +174,15 @@ static void do_client_rr(struct unimsg_sock *s)
 		}
 	}
 
-	for (unsigned i = 0; i < ndescs; i++)
+	for (unsigned i = 0; i < ndescs; i++) {
 		*(char *)descs[i].addr = 0;
-	if (opt_http)
+		descs[i].size = UNIMSG_BUFFER_AVAILABLE;
+	}
+	descs[ndescs - 1].size = opt_size % UNIMSG_BUFFER_AVAILABLE;
+	if (opt_http) {
 		strcpy(descs[0].addr, http_req);
+		descs[0].size = sizeof(http_req);
+	}
 
 	do {
 		STORE_TIME(start);
@@ -194,20 +199,25 @@ static void do_client_rr(struct unimsg_sock *s)
 		send_time += stop - start;
 #endif
 
+	unsigned rdescs = 0, rsize = 0;
 	do {
-		STORE_TIME(start);
-		nrecv = ndescs;
-		rc = unimsg_recv(s, descs, &nrecv, opt_busy_poll);
-		STORE_TIME(stop);
-	} while (opt_busy_poll && rc == -EAGAIN);
+		do {
+			STORE_TIME(start);
+			nrecv = UNIMSG_MAX_DESCS_BULK;
+			rc = unimsg_recv(s, &descs[rdescs], &nrecv,
+					 opt_busy_poll);
+			STORE_TIME(stop);
+
+			if (!rc) {
+				for (unsigned i = 0; i < nrecv; i++)
+					rsize += descs[rdescs + i].size;
+				rdescs += nrecv;
+			}
+		} while (opt_busy_poll && rc == -EAGAIN);
+	} while (!opt_http && !rc && rsize < opt_size);
 	if (rc) {
 		fprintf(stderr, "Error receiving descs: %s\n", strerror(-rc));
 		ERR_CLOSE(s);
-	}
-	if (nrecv < ndescs) {
-		fprintf(stderr, "Received unexpected number of descs: %s\n",
-			strerror(-rc));
-		ERR_PUT(descs, nrecv, s);
 	}
 
 #ifdef ADDITIONAL_STATS
@@ -215,11 +225,13 @@ static void do_client_rr(struct unimsg_sock *s)
 		recv_time += stop - start;
 #endif
 
-	for (unsigned i = 0; i < ndescs; i++)
+	for (unsigned i = 0; i < rdescs; i++)
 		*(char *)descs[i].addr = 0;
 
 	if (!opt_buffers_reuse)
-		unimsg_buffer_put(descs, ndescs);
+		unimsg_buffer_put(descs, rdescs);
+	else if (rdescs > ndescs)
+		unimsg_buffer_put(&descs[ndescs], rdescs - ndescs);
 }
 
 static void client(struct unimsg_sock *s)
@@ -339,13 +351,22 @@ static void server(struct unimsg_sock *s)
 #ifdef ADDITIONAL_STATS
 		unsigned long start, stop;
 #endif
-
+		unsigned rdescs = 0, rsize = 0;
 		do {
-			STORE_TIME(start);
-			nrecv = UNIMSG_MAX_DESCS_BULK;
-			rc = unimsg_recv(s, descs, &nrecv, opt_busy_poll);
-			STORE_TIME(stop);
-		} while (opt_busy_poll && rc == -EAGAIN);
+			do {
+				STORE_TIME(start);
+				nrecv = UNIMSG_MAX_DESCS_BULK;
+				rc = unimsg_recv(s, &descs[rdescs], &nrecv,
+						opt_busy_poll);
+				STORE_TIME(stop);
+
+				if (!rc) {
+					for (unsigned i = 0; i < nrecv; i++)
+						rsize += descs[rdescs + i].size;
+					rdescs += nrecv;
+				}
+			} while (opt_busy_poll && rc == -EAGAIN);
+		} while (!opt_http && !rc && rsize < opt_size);
 		if (rc == -ECONNRESET) {
 			break;
 		} else if (rc) {
@@ -354,23 +375,24 @@ static void server(struct unimsg_sock *s)
 			ERR_CLOSE(s);
 		}
 
-		for (unsigned i = 0; i < nrecv; i++)
+		for (unsigned i = 0; i < rdescs; i++)
 			*(char *)descs[i].addr = 0;
 
-		unsigned nsend = nrecv;
+		unsigned nsend = rdescs;
 		if (opt_http) {
 			nsend = (opt_size - 1) / UNIMSG_BUFFER_AVAILABLE + 1;
-			if (nsend > nrecv) {
-				rc = unimsg_buffer_get(&descs[nrecv],
-						       nsend - nrecv);
+			if (nsend > rdescs) {
+				rc = unimsg_buffer_get(&descs[rdescs],
+						       nsend - rdescs);
 				if (rc) {
 					fprintf(stderr, "Error getting shm "
 						"buffer: %s\n",	strerror(-rc));
 					ERR_CLOSE(s);
 				}
 
-			} else if (nsend < nrecv) {
-				unimsg_buffer_put(&descs[nsend], nrecv - nsend);
+			} else if (nsend < rdescs) {
+				unimsg_buffer_put(&descs[nsend],
+						  rdescs - nsend);
 			}
 
 			sprintf(descs[0].addr, http_resp, http_body_size);

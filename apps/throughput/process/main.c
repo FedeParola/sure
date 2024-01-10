@@ -106,12 +106,6 @@ static void parse_command_line(int argc, char **argv)
 			break;
 		case 's':
 			opt_size = atoi(optarg);
-			/* Since we read/write the message as 8 byte words,
-			 * round size to the upper multiple of 8
-			 */
-			if (opt_size & 7)
-				opt_size += 8;
-			opt_size &= ~7;
 			break;
 		case 'c':
 			opt_connections = atoi(optarg);

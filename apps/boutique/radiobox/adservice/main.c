@@ -171,10 +171,10 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
-	rc = unimsg_bind(s, AD_PORT);
+	rc = unimsg_bind(s, services[AD_SERVICE].port);
 	if (rc) {
-		fprintf(stderr, "Error binding to port %d: %s\n", AD_PORT,
-			strerror(-rc));
+		fprintf(stderr, "Error binding to port %d: %s\n",
+			services[AD_SERVICE].port, strerror(-rc));
 		ERR_CLOSE(s);
 	}
 

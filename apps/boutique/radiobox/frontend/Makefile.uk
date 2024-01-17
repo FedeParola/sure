@@ -1,14 +1,3 @@
 $(eval $(call addlib,appfrontend))
 
 APPFRONTEND_SRCS-y += $(APPFRONTEND_BASE)/main.c
-
-APPFRONTEND_SRCS-y += $(APPFRONTEND_BASE)/../common/cstl/src/c_algorithms.c
-APPFRONTEND_SRCS-y += $(APPFRONTEND_BASE)/../common/cstl/src/c_array.c
-APPFRONTEND_SRCS-y += $(APPFRONTEND_BASE)/../common/cstl/src/c_deque.c
-APPFRONTEND_SRCS-y += $(APPFRONTEND_BASE)/../common/cstl/src/c_map.c
-APPFRONTEND_SRCS-y += $(APPFRONTEND_BASE)/../common/cstl/src/c_rb.c
-APPFRONTEND_SRCS-y += $(APPFRONTEND_BASE)/../common/cstl/src/c_set.c
-APPFRONTEND_SRCS-y += $(APPFRONTEND_BASE)/../common/cstl/src/c_slist.c
-APPFRONTEND_SRCS-y += $(APPFRONTEND_BASE)/../common/cstl/src/c_util.c
-
-APPFRONTEND_CINCLUDES-y += -I$(APPFRONTEND_BASE)/../common/cstl/inc

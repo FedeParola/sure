@@ -42,10 +42,10 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
-	rc = unimsg_bind(s, EMAIL_PORT);
+	rc = unimsg_bind(s, services[EMAIL_SERVICE].port);
 	if (rc) {
-		fprintf(stderr, "Error binding to port %d: %s\n", EMAIL_PORT,
-			strerror(-rc));
+		fprintf(stderr, "Error binding to port %d: %s\n",
+			services[EMAIL_SERVICE].port, strerror(-rc));
 		ERR_CLOSE(s);
 	}
 

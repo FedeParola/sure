@@ -3,12 +3,7 @@
  * Copyright (c) 2022 University of California, Riverside
  */
 
-// #include <math.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unimsg/net.h>
-#include "../common/services.h"
+#include "../common/service.h"
 #include "../common/messages.h"
 
 #define DEFAULT_UUID "1b4e28ba-2fa1-11d2-883f-0016d3cca427"
@@ -429,10 +424,33 @@ static void PlaceOrder(PlaceOrderRR *rr)
 	unimsg_buffer_put(&desc, 1);
 }
 
+static void handle_request(struct unimsg_sock *s)
+{
+	struct unimsg_shm_desc desc;
+	unsigned nrecv;
+	PlaceOrderRR *rr;
+
+	nrecv = 1;
+	int rc = unimsg_recv(s, &desc, &nrecv, 0);
+	if (rc) {
+		fprintf(stderr, "Error receiving desc: %s\n", strerror(-rc));
+		ERR_CLOSE(s);
+	}
+
+	rr = desc.addr;
+
+	PlaceOrder(rr);
+
+	rc = unimsg_send(s, &desc, 1, 0);
+	if (rc) {
+		fprintf(stderr, "Error sending desc: %s\n", strerror(-rc));
+		ERR_PUT(&desc, 1, s);
+	}
+}
+
 int main(int argc, char **argv)
 {
 	int rc;
-	struct unimsg_sock *s = NULL;
 
 	(void)argc;
 	(void)argv;
@@ -453,68 +471,13 @@ int main(int argc, char **argv)
 				   services[id].port)) {
 			fprintf(stderr, "Error connecting to %s service: %s\n",
 				services[id].name, strerror(-rc));
-			ERR_CLOSE(s);
+			ERR_CLOSE(socks[id]);
 		}
 
 		printf("Connected to %s service\n", services[id].name);
 	}
 
-	rc = unimsg_socket(&s);
-	if (rc) {
-		fprintf(stderr, "Error creating unimsg socket: %s\n",
-			strerror(-rc));
-		return 1;
-	}
-
-	rc = unimsg_bind(s, services[CHECKOUT_SERVICE].port);
-	if (rc) {
-		fprintf(stderr, "Error binding to port %d: %s\n",
-			services[CHECKOUT_SERVICE].port, strerror(-rc));
-		ERR_CLOSE(s);
-	}
-
-	rc = unimsg_listen(s);
-	if (rc) {
-		fprintf(stderr, "Error listening: %s\n", strerror(-rc));
-		ERR_CLOSE(s);
-	}
-
-	printf("Waiting for incoming connections...\n");
-
-	struct unimsg_sock *cs;
-	rc = unimsg_accept(s, &cs, 0);
-	if (rc) {
-		fprintf(stderr, "Error accepting connection: %s\n",
-			strerror(-rc));
-		ERR_CLOSE(s);
-	}
-
-	printf("Client connected\n");
-
-	while (1) {
-		struct unimsg_shm_desc desc;
-		unsigned nrecv;
-		PlaceOrderRR *rr;
-
-		nrecv = 1;
-		rc = unimsg_recv(cs, &desc, &nrecv, 0);
-		if (rc) {
-			fprintf(stderr, "Error receiving desc: %s\n",
-				strerror(-rc));
-			ERR_CLOSE(s);
-		}
-
-		rr = desc.addr;
-
-		PlaceOrder(rr);
-
-		rc = unimsg_send(cs, &desc, 1, 0);
-		if (rc) {
-			fprintf(stderr, "Error sending desc: %s\n",
-				strerror(-rc));
-			ERR_PUT(&desc, 1, s);
-		}
-	}
+	run_service(CHECKOUT_SERVICE, handle_request);
 	
 	return 0;
 }

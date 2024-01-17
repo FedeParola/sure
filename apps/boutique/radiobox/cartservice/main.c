@@ -8,7 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unimsg/net.h>
-#include "../common/services.h"
+#include "../common/service.h"
 #include "../common/messages.h"
 
 #define ERR_CLOSE(s) ({ unimsg_close(s); exit(1); })
@@ -183,84 +183,50 @@ static void MockEmptyCartRequest(EmptyCartRequest *in) {
 	strcpy(in->UserId, "spright-online-boutique");
 }
 
+static void handle_request(struct unimsg_sock *s)
+{
+	struct unimsg_shm_desc desc;
+	unsigned nrecv;
+	CartRpc *rpc;
+
+	nrecv = 1;
+	int rc = unimsg_recv(s, &desc, &nrecv, 0);
+	if (rc) {
+		fprintf(stderr, "Error receiving desc: %s\n", strerror(-rc));
+		ERR_CLOSE(s);
+	}
+
+	rpc = desc.addr;
+
+	switch (rpc->command) {
+	case CART_COMMAND_ADD_ITEM:
+		AddItem((AddItemRequest *)&rpc->rr);
+		break;
+	case CART_COMMAND_GET_CART:
+		GetCart((GetCartRR *)&rpc->rr);
+		break;
+	case CART_COMMAND_EMPTY_CART:
+		EmptyCart((EmptyCartRequest *)&rpc->rr);
+		break;
+	default:
+		fprintf(stderr, "Received unknown command\n");
+	}
+
+	rc = unimsg_send(s, &desc, 1, 0);
+	if (rc) {
+		fprintf(stderr, "Error sending desc: %s\n", strerror(-rc));
+		ERR_PUT(&desc, 1, s);
+	}
+}
+
 int main(int argc, char **argv)
 {
-	int rc;
-	struct unimsg_sock *s;
-
 	(void)argc;
 	(void)argv;
 
 	LocalCartStore = new_c_map(compare_e, NULL, NULL);
 
-	rc = unimsg_socket(&s);
-	if (rc) {
-		fprintf(stderr, "Error creating unimsg socket: %s\n",
-			strerror(-rc));
-		return 1;
-	}
-
-	rc = unimsg_bind(s, services[CART_SERVICE].port);
-	if (rc) {
-		fprintf(stderr, "Error binding to port %d: %s\n",
-			services[CART_SERVICE].port, strerror(-rc));
-		ERR_CLOSE(s);
-	}
-
-	rc = unimsg_listen(s);
-	if (rc) {
-		fprintf(stderr, "Error listening: %s\n", strerror(-rc));
-		ERR_CLOSE(s);
-	}
-
-	printf("Waiting for incoming connections...\n");
-
-	struct unimsg_sock *cs;
-	rc = unimsg_accept(s, &cs, 0);
-	if (rc) {
-		fprintf(stderr, "Error accepting connection: %s\n",
-			strerror(-rc));
-		ERR_CLOSE(s);
-	}
-
-	printf("Client connected\n");
-
-	while (1) {
-		struct unimsg_shm_desc desc;
-		unsigned nrecv;
-		CartRpc *rpc;
-
-		nrecv = 1;
-		rc = unimsg_recv(cs, &desc, &nrecv, 0);
-		if (rc) {
-			fprintf(stderr, "Error receiving desc: %s\n",
-				strerror(-rc));
-			ERR_CLOSE(s);
-		}
-
-		rpc = desc.addr;
-
-		switch (rpc->command) {
-		case CART_COMMAND_ADD_ITEM:
-			AddItem((AddItemRequest *)&rpc->rr);
-			break;
-		case CART_COMMAND_GET_CART:
-			GetCart((GetCartRR *)&rpc->rr);
-			break;
-		case CART_COMMAND_EMPTY_CART:
-			EmptyCart((EmptyCartRequest *)&rpc->rr);
-			break;
-		default:
-			fprintf(stderr, "Received unknown command\n");
-		}
-
-		rc = unimsg_send(cs, &desc, 1, 0);
-		if (rc) {
-			fprintf(stderr, "Error sending desc: %s\n",
-				strerror(-rc));
-			ERR_PUT(&desc, 1, s);
-		}
-	}
+	run_service(CART_SERVICE, handle_request);
 	
 	return 0;
 }

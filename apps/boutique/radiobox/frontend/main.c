@@ -7,20 +7,21 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unimsg/net.h>
-#include "../common/services.h"
+#include "../common/service.h"
 #include "../common/messages.h"
 
+#define HTTP_ERROR() ({ fprintf(stderr, "HTTP error\n"); exit(0); })
 #define ERR_CLOSE(s) ({ unimsg_close(s); exit(1); })
 #define ERR_PUT(descs, ndescs, s) ({					\
 	unimsg_buffer_put(descs, ndescs);				\
 	ERR_CLOSE(s);							\
 })
 
-#define HTTP_RESPONSE "HTTP/1.1 200 OK\r\n" \
-                      "Connection: close\r\n" \
-                      "Content-Type: text/plain\r\n" \
-                      "Content-Length: 13\r\n" \
-                      "\r\n" \
+#define HTTP_RESPONSE "HTTP/1.1 200 OK\r\n"				\
+                      "Connection: close\r\n"				\
+                      "Content-Type: text/plain\r\n"			\
+                      "Content-Length: 13\r\n"				\
+                      "\r\n"						\
                       "Hello World\r\n"
 
 #define USER_ID "federico"
@@ -235,131 +236,112 @@ static void homeHandler(struct unimsg_shm_desc *desc)
 	chooseAd(desc, NULL, 0);
 
 	strcpy(desc->addr, HTTP_RESPONSE);
+	desc->size = strlen(desc->addr);
 
 	return;
 }
 
-// static void productHandler(struct http_transaction *txn) {
-// 	printf("Call productHandler ### Hop: %u\n", txn->hop_count);
+static Product getProduct(struct unimsg_shm_desc *desc, char *product_id)
+{
+	int rc;
 
-// 	if (txn->hop_count == 0) {
-// 		getProduct(txn);
-// 		txn->productViewCntr = 0;
-// 	} else if (txn->hop_count == 1) {
-// 		getCurrencies(txn);
-// 	} else if (txn->hop_count == 2) {
-// 		getCart(txn);
-// 	} else if (txn->hop_count == 3) {
-// 		convertCurrencyOfProduct(txn);
+	ProductCatalogRpc *rpc = desc->addr;
+	rpc->command = PRODUCT_CATALOG_COMMAND_GET_PRODUCT;
+	desc->size = sizeof(ProductCatalogRpc) + sizeof(GetProductRR);
+	GetProductRR *rr = (GetProductRR *)rpc->rr;
+	strcpy(rr->req.Id, product_id);
 
-// 	} else if (txn->hop_count == 4) {
-// 		chooseAd(txn);
-// 	} else if (txn->hop_count == 5) {
-// 		returnResponse(txn);
-// 	} else {
-// 		printf("productHandler doesn't know what to do for HOP %u.\n", txn->hop_count);
-// 		returnResponse(txn);
+	rc = unimsg_send(socks[PRODUCTCATALOG_SERVICE], desc, 1, 0); 
+	if (rc) {
+		fprintf(stderr, "Error sending desc: %s\n", strerror(-rc));
+		exit(1);
+	}
 
-// 	}
-// 	return;
-// }
+	unsigned nrecv = 1;
+	rc = unimsg_recv(socks[PRODUCTCATALOG_SERVICE], desc, &nrecv, 0);
+	if (rc) {
+		fprintf(stderr, "Error receiving desc: %s\n", strerror(-rc));
+		exit(1);
+	}
 
-// static void addToCartHandler(struct http_transaction *txn) {
-// 	printf("Call addToCartHandler ### Hop: %u\n", txn->hop_count);
-// 	if (txn->hop_count == 0) {
-// 		getProduct(txn);
-// 		txn->productViewCntr = 0;
+	if (desc->size != sizeof(ProductCatalogRpc) + sizeof(GetProductRR)) {
+		fprintf(stderr, "Received reply of unexpected size\n");
+		exit(1);
+	}
 
-// 	} else if (txn->hop_count == 1) {
-// 		insertCart(txn);
+	return ((GetProductRR *)(((ProductCatalogRpc *)desc->addr)->rr))->res;
+}
 
-// 	} else if (txn->hop_count == 2) {
-// 		returnResponse(txn);
-// 	} else {
-// 		printf("addToCartHandler doesn't know what to do for HOP %u.\n", txn->hop_count);
-// 		returnResponse(txn);
-// 	}
-// }
+static ListRecommendationsResponse *
+getRecommendations(struct unimsg_shm_desc *desc, char *user_id,
+		   char *product_ids[], unsigned num_product_ids)
+{
+	int rc;
 
-// static void viewCartHandler(struct http_transaction *txn) {
-// 	printf("[%s()] Call viewCartHandler ### Hop: %u\n", __func__, txn->hop_count);
-// 	if (txn->hop_count == 0) {
-// 		getCurrencies(txn);
+	printf("Need to convert id %s\n", *product_ids);
+	printf("Need to convert id %s\n", product_ids[0]);
 
-// 	} else if (txn->hop_count == 1) {
-// 		getCart(txn);
-// 		txn->cartItemViewCntr = 0;
-// 		strcpy(txn->total_price.CurrencyCode, defaultCurrency);
+	ListRecommendationsRR *rr = desc->addr;
+	desc->size = sizeof(ListRecommendationsRR);
+	strcpy(rr->req.user_id, user_id);
+	for (unsigned i = 0; i < num_product_ids; i++) {
+		printf("Gonna copy %p:'%s' to %p\n", product_ids[i], product_ids[i], rr->req.product_ids[i]);
+		strcpy(rr->req.product_ids[i], product_ids[i]);
+		printf("Copied\n");
+	}
+	rr->req.num_product_ids = num_product_ids;
 
-// 	} else if (txn->hop_count == 2) {
-// 		getRecommendations(txn);
+	rc = unimsg_send(socks[RECOMMENDATION_SERVICE], desc, 1, 0); 
+	if (rc) {
+		fprintf(stderr, "Error sending desc: %s\n", strerror(-rc));
+		exit(1);
+	}
 
-// 	} else if (txn->hop_count == 3) {
-// 		getShippingQuote(txn);
+	unsigned nrecv = 1;
+	rc = unimsg_recv(socks[RECOMMENDATION_SERVICE], desc, &nrecv, 0);
+	if (rc) {
+		fprintf(stderr, "Error receiving desc: %s\n", strerror(-rc));
+		exit(1);
+	}
 
-// 	} else if (txn->hop_count == 4) {
-// 		convertCurrencyOfShippingQuote(txn);
-// 		if (txn->get_quote_response.conversion_flag == true) {
-// 			getCartItemInfo(txn);
-// 			txn->hop_count++;
+	if (desc->size != sizeof(ListRecommendationsRR)) {
+		fprintf(stderr, "Received reply of unexpected size\n");
+		exit(1);
+	}
 
-// 		} else {
-// 			printf("[%s()] Set get_quote_response.conversion_flag as true\n", __func__);
-// 			txn->get_quote_response.conversion_flag = true;
-// 		}
-		
-// 	} else if (txn->hop_count == 5) {
-// 		getCartItemInfo(txn);
+	return &((ListRecommendationsRR *)desc->addr)->res;
+}
 
-// 	} else if (txn->hop_count == 6) {
-// 		convertCurrencyOfCart(txn);
-// 	} else {
-// 		printf("[%s()] viewCartHandler doesn't know what to do for HOP %u.\n", __func__, txn->hop_count);
-// 		returnResponse(txn);
-// 	}
-// }
+static void productHandler(struct unimsg_shm_desc *desc, char *arg)
+{
+	Product p = getProduct(desc, arg);
 
-// static void PlaceOrder(struct http_transaction *txn) {
-// 	parsePlaceOrderRequest(txn);
-// 	// PrintPlaceOrderRequest(txn);
+	/* Discard result */
+	getCurrencies(desc);
 
-// 	strcpy(txn->rpc_handler, "PlaceOrder");
-// 	txn->caller_fn = FRONTEND;
-// 	txn->next_fn = CHECKOUT_SVC;
-// 	txn->hop_count++;
-// 	txn->checkoutsvc_hop_cnt = 0;
-// }
+	/* Discard result */
+	getCart(desc, "default_user_id");
 
-// static void placeOrderHandler(struct http_transaction *txn) {
-// 	printf("[%s()] Call placeOrderHandler ### Hop: %u\n", __func__, txn->hop_count);
+	/* Discard result */
+	convertCurrency(desc, p.PriceUsd, CURRENCY);
 
-// 	if (txn->hop_count == 0) {
-// 		PlaceOrder(txn);
+	/* Discard result */
+	char *product_id = p.Id;
+	getRecommendations(desc, USER_ID, &product_id, 1);
 
-// 	} else if (txn->hop_count == 1) {
-// 		getRecommendations(txn);
+	/* Discard result */
+	chooseAd(desc, NULL, 0);
 
-// 	} else if (txn->hop_count == 2) {
-// 		getCurrencies(txn);
+	strcpy(desc->addr, HTTP_RESPONSE);
+	desc->size = strlen(desc->addr);
+}
 
-// 	} else if (txn->hop_count == 3) {
-// 		returnResponse(txn);
-
-// 	} else {
-// 		printf("[%s()] placeOrderHandler doesn't know what to do for HOP %u.\n", __func__, txn->hop_count);
-// 		returnResponse(txn);
-// 	}
-// }
-
-static void productHandler(struct unimsg_shm_desc *desc) {}
 static void viewCartHandler(struct unimsg_shm_desc *desc) {}
 static void addToCartHandler(struct unimsg_shm_desc *desc) {}
 static void emptyCartHandler(struct unimsg_shm_desc *desc) {}
 static void setCurrencyHandler(struct unimsg_shm_desc *desc) {}
 static void logoutHandler(struct unimsg_shm_desc *desc) {}
 static void placeOrderHandler(struct unimsg_shm_desc *desc) {}
-
-#define HTTP_ERROR() exit(0)
 
 static void parse_http_request(struct unimsg_shm_desc *desc, char **method,
 			       char **url, char **body)
@@ -398,6 +380,8 @@ static void handle_http_request(struct unimsg_shm_desc *desc)
 
 	int handled = 0;
 
+	printf("Handling %s %s\n", method, url);
+
 	/* Request routing */
 	if (!strcmp(url, "/")) {
 		if (!strcmp(method, "GET")) {
@@ -406,7 +390,7 @@ static void handle_http_request(struct unimsg_shm_desc *desc)
 		}
 	} else if (!strncmp(url, "/product/", sizeof("/product/") - 1)) {
 		if (!strcmp(method, "GET")) {
-			productHandler(desc);
+			productHandler(desc, url + sizeof("/product/") - 1);
 			handled = 1;
 		}
 	} else if (!strcmp(url, "/cart")) {

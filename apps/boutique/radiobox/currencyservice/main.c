@@ -5,11 +5,7 @@
 
 #include <c_lib.h>
 #include <math.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unimsg/net.h>
-#include "../common/services.h"
+#include "../common/service.h"
 #include "../common/messages.h"
 
 #define ERR_CLOSE(s) ({ unimsg_close(s); exit(1); })
@@ -80,20 +76,29 @@ static void Convert(CurrencyConversionRR *rr) {
 	CurrencyConversionRequest* in = &rr->req;
 	Money* euros = &rr->res;
 
+	printf("Requested conversion from %s\n", rr->req.From.CurrencyCode);
+	printf("Requested conversion to %s\n", rr->req.ToCode);
+
 	// Convert: from_currency --> EUR
 	void* data;
 	find_c_map(currency_data_map, in->From.CurrencyCode, &data);
 	euros->Units = (int64_t)((double)in->From.Units/ *(double*)data);
 	euros->Nanos = (int32_t)((double)in->From.Nanos/ *(double*)data);
 
+	printf("A\n");
+
 	Carry(euros);
 	euros->Nanos = (int32_t)(round((double) euros->Nanos));
+
+	printf("B\n");
 
 	// Convert: EUR --> to_currency
 	find_c_map(currency_data_map, in->ToCode, &data);
 	euros->Units = (int64_t)((double)euros->Units/ *(double*)data);
 	euros->Nanos = (int32_t)((double)euros->Nanos/ *(double*)data);
 	Carry(euros);
+
+	printf("C\n");
 
 	euros->Units = (int64_t)(floor((double)(euros->Units)));
 	euros->Nanos = (int32_t)(floor((double)(euros->Nanos)));
@@ -103,83 +108,51 @@ static void Convert(CurrencyConversionRR *rr) {
 	return;
 }
 
+static void handle_request(struct unimsg_sock *s)
+{
+	struct unimsg_shm_desc desc;
+	unsigned nrecv;
+	CurrencyRpc *rpc;
+
+	nrecv = 1;
+	int rc = unimsg_recv(s, &desc, &nrecv, 0);
+	if (rc) {
+		fprintf(stderr, "Error receiving desc: %s\n", strerror(-rc));
+		ERR_CLOSE(s);
+	}
+	printf("Received request\n");
+
+	rpc = desc.addr;
+
+	switch (rpc->command) {
+	case CURRENCY_COMMAND_GET_SUPPORTED_CURRENCIES:
+		GetSupportedCurrencies(
+			(GetSupportedCurrenciesResponse *)&rpc->rr);
+		break;
+	case CURRENCY_COMMAND_CONVERT:
+		Convert((CurrencyConversionRR *)&rpc->rr);
+		break;
+	default:
+		fprintf(stderr, "Received unknown command\n");
+	}
+
+	rc = unimsg_send(s, &desc, 1, 0);
+	if (rc) {
+		fprintf(stderr, "Error sending desc: %s\n", strerror(-rc));
+		ERR_PUT(&desc, 1, s);
+	}
+	printf("Sent response\n");
+}
+
 int main(int argc, char **argv)
 {
-	int rc;
-	struct unimsg_sock *s;
-
 	(void)argc;
 	(void)argv;
 
 	currency_data_map = new_c_map(compare_e, NULL, NULL);
 	getCurrencyData(currency_data_map);
 
-	rc = unimsg_socket(&s);
-	if (rc) {
-		fprintf(stderr, "Error creating unimsg socket: %s\n",
-			strerror(-rc));
-		return 1;
-	}
-
-	rc = unimsg_bind(s, services[CURRENCY_SERVICE].port);
-	if (rc) {
-		fprintf(stderr, "Error binding to port %d: %s\n",
-			services[CURRENCY_SERVICE].port, strerror(-rc));
-		ERR_CLOSE(s);
-	}
-
-	rc = unimsg_listen(s);
-	if (rc) {
-		fprintf(stderr, "Error listening: %s\n", strerror(-rc));
-		ERR_CLOSE(s);
-	}
-
-	printf("Waiting for incoming connections...\n");
-
-	struct unimsg_sock *cs;
-	rc = unimsg_accept(s, &cs, 0);
-	if (rc) {
-		fprintf(stderr, "Error accepting connection: %s\n",
-			strerror(-rc));
-		ERR_CLOSE(s);
-	}
-
-	printf("Client connected\n");
-
-	while (1) {
-		struct unimsg_shm_desc desc;
-		unsigned nrecv;
-		CurrencyRpc *rpc;
-
-		nrecv = 1;
-		rc = unimsg_recv(cs, &desc, &nrecv, 0);
-		if (rc) {
-			fprintf(stderr, "Error receiving desc: %s\n",
-				strerror(-rc));
-			ERR_CLOSE(s);
-		}
-
-		rpc = desc.addr;
-
-		switch (rpc->command) {
-		case CURRENCY_COMMAND_GET_SUPPORTED_CURRENCIES:
-			GetSupportedCurrencies(
-				(GetSupportedCurrenciesResponse *)&rpc->rr);
-			break;
-		case CURRENCY_COMMAND_CONVERT:
-			Convert((CurrencyConversionRR *)&rpc->rr);
-			break;
-		default:
-			fprintf(stderr, "Received unknown command\n");
-		}
-
-		rc = unimsg_send(cs, &desc, 1, 0);
-		if (rc) {
-			fprintf(stderr, "Error sending desc: %s\n",
-				strerror(-rc));
-			ERR_PUT(&desc, 1, s);
-		}
-	}
+	run_service(CURRENCY_SERVICE, handle_request);
 	
 	return 0;
 }

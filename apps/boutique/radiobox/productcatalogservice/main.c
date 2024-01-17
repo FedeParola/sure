@@ -5,11 +5,7 @@
 
 #include <c_lib.h>
 #include <math.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unimsg/net.h>
-#include "../common/services.h"
+#include "../common/service.h"
 #include "../common/messages.h"
 
 #define ERR_CLOSE(s) ({ unimsg_close(s); exit(1); })
@@ -161,9 +157,8 @@ static void parseCatalog(struct clib_map* map) {
 
 static void ListProducts(ListProductsResponse *out) {
 	int size = sizeof(out->Products)/sizeof(out->Products[0]);
-	int i = 0;
 	out->num_products = 0;
-	for (i = 0; i < size; i++) {
+	for (int i = 0; i < size; i++) {
 		out->Products[i] = products[i];
 		out->num_products++;
 	}
@@ -208,8 +203,8 @@ static void SearchProducts(SearchProductsRR *rr) {
 	SearchProductsResponse* out = &rr->res;
 	out->num_products = 0;
 
-	// Intepret query as a substring match in name or description.
-	int size = sizeof(product_ids)/sizeof(product_ids[0]);
+	/* Intepret query as a substring match in name or description. */
+	int size = sizeof(product_ids) / sizeof(product_ids[0]);
 	int i = 0;
 	for (i = 0; i < size; i++ ) {
 		if (strstr(products[i].Name, req->Query) != NULL 
@@ -221,85 +216,51 @@ static void SearchProducts(SearchProductsRR *rr) {
 	return;
 }
 
+static void handle_request(struct unimsg_sock *s)
+{
+	struct unimsg_shm_desc desc;
+	unsigned nrecv;
+	ProductCatalogRpc *rpc;
+
+	nrecv = 1;
+	int rc = unimsg_recv(s, &desc, &nrecv, 0);
+	if (rc) {
+		fprintf(stderr, "Error receiving desc: %s\n", strerror(-rc));
+		ERR_CLOSE(s);
+	}
+
+	rpc = desc.addr;
+
+	switch (rpc->command) {
+	case PRODUCT_CATALOG_COMMAND_LIST_PRODUCTS:
+		ListProducts((ListProductsResponse *)&rpc->rr);
+		break;
+	case PRODUCT_CATALOG_COMMAND_GET_PRODUCT:
+		GetProduct((GetProductRR *)&rpc->rr);
+		break;
+	case PRODUCT_CATALOG_COMMAND_SEARCH_PRODUCTS:
+		SearchProducts((SearchProductsRR *)&rpc->rr);
+		break;
+	default:
+		fprintf(stderr, "Received unknown command\n");
+	}
+
+	rc = unimsg_send(s, &desc, 1, 0);
+	if (rc) {
+		fprintf(stderr, "Error sending desc: %s\n", strerror(-rc));
+		ERR_PUT(&desc, 1, s);
+	}
+}
+
 int main(int argc, char **argv)
 {
-	int rc;
-	struct unimsg_sock *s;
-
 	(void)argc;
 	(void)argv;
 
 	productcatalog_map = new_c_map(compare_e, NULL, NULL);
 	parseCatalog(productcatalog_map);
 
-	rc = unimsg_socket(&s);
-	if (rc) {
-		fprintf(stderr, "Error creating unimsg socket: %s\n",
-			strerror(-rc));
-		return 1;
-	}
-
-	rc = unimsg_bind(s, services[PRODUCTCATALOG_SERVICE].port);
-	if (rc) {
-		fprintf(stderr, "Error binding to port %d: %s\n",
-			services[PRODUCTCATALOG_SERVICE].port, strerror(-rc));
-		ERR_CLOSE(s);
-	}
-
-	rc = unimsg_listen(s);
-	if (rc) {
-		fprintf(stderr, "Error listening: %s\n", strerror(-rc));
-		ERR_CLOSE(s);
-	}
-
-	printf("Waiting for incoming connections...\n");
-
-	struct unimsg_sock *cs;
-	rc = unimsg_accept(s, &cs, 0);
-	if (rc) {
-		fprintf(stderr, "Error accepting connection: %s\n",
-			strerror(-rc));
-		ERR_CLOSE(s);
-	}
-
-	printf("Client connected\n");
-
-	while (1) {
-		struct unimsg_shm_desc desc;
-		unsigned nrecv;
-		ProductCatalogRpc *rpc;
-
-		nrecv = 1;
-		rc = unimsg_recv(cs, &desc, &nrecv, 0);
-		if (rc) {
-			fprintf(stderr, "Error receiving desc: %s\n",
-				strerror(-rc));
-			ERR_CLOSE(s);
-		}
-
-		rpc = desc.addr;
-
-		switch (rpc->command) {
-		case PRODUCT_CATALOG_COMMAND_LIST_PRODUCTS:
-			ListProducts((ListProductsResponse *)&rpc->rr);
-			break;
-		case PRODUCT_CATALOG_COMMAND_GET_PRODUCT:
-			GetProduct((GetProductRR *)&rpc->rr);
-			break;
-		case PRODUCT_CATALOG_COMMAND_SEARCH_PRODUCTS:
-			SearchProducts((SearchProductsRR *)&rpc->rr);
-			break;
-		default:
-			fprintf(stderr, "Received unknown command\n");
-		}
-
-		rc = unimsg_send(cs, &desc, 1, 0);
-		if (rc) {
-			fprintf(stderr, "Error sending desc: %s\n",
-				strerror(-rc));
-			ERR_PUT(&desc, 1, s);
-		}
-	}
+	run_service(PRODUCTCATALOG_SERVICE, handle_request);
 	
 	return 0;
 }

@@ -100,12 +100,14 @@ typedef struct _cartRpc {
  */
 
 typedef struct _listRecommendationsRequest {
-	// char UserId[50];
-	char ProductId[20];
+	char user_id[50];
+	unsigned num_product_ids;
+	char product_ids[10][20];
 } ListRecommendationsRequest;
 
 typedef struct _listRecommendationsResponse{
-	char ProductId [20];
+	unsigned num_product_ids;
+	char product_ids[10][20];
 } ListRecommendationsResponse;
 
 typedef struct _listRecommendationsRR {
@@ -227,10 +229,8 @@ typedef struct _product {
 	char Description[100];
 	char Picture[60];
 	Money PriceUsd;
-	// Categories such as "clothing" or "kitchen" that can be used to look up
-	// other related products.
 	int num_categories;
-	char Categories[10][20];
+	char Categories[5][20];
 } Product;
 
 typedef struct _listProductsResponse {

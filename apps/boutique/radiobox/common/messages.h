@@ -43,7 +43,7 @@
  */
 
 typedef struct _cartItem {
-	char ProductId[50];
+	char ProductId[20];
 	int32_t Quantity;
 } CartItem;
 
@@ -436,6 +436,7 @@ typedef struct _orderResult {
 	char ShippingTrackingId[100];
 	Money ShippingCost;
 	Address ShippingAddress;
+	unsigned num_items;
 	OrderItem Items[10];
 } OrderResult;
 

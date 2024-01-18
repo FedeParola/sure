@@ -139,17 +139,6 @@ static void GetAds(AdRR *rr) {
 	printf("[GetAds] completed request\n");
 }
 
-static void MockAdRequest(AdRR *rr) {
-	int num_context_keys = 2;
-	int i;
-	
-	rr->req.num_context_keys = 0;
-	for (i = 0; i < num_context_keys; i++) {
-		rr->req.num_context_keys++;
-		strcpy(rr->req.ContextKeys[i], ad_name[i]);
-	}
-}
-
 static void handle_request(struct unimsg_sock *s)
 {
 	struct unimsg_shm_desc desc;

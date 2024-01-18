@@ -16,11 +16,6 @@ static void SendOrderConfirmation(SendOrderConfirmationRR *rr) {
 	return;
 }
 
-static void MockEmailRequest(SendOrderConfirmationRR *rr) {
-	strcpy(rr->req.Email, "sqi009@ucr.edu");
-	return;
-}
-
 static void handle_request(struct unimsg_sock *s)
 {
 	struct unimsg_shm_desc desc;

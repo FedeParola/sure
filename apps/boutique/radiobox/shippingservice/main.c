@@ -71,19 +71,6 @@ static void GetQuote(GetQuoteRR *rr) {
 	return;
 }
 
-static void MockGetQuoteRequest(GetQuoteRR *rr) {
-	GetQuoteRequest* in = &rr->req;
-	in->num_items = 0;
-
-	int i;
-	for (i = 0; i < 3; i++) {
-		in->Items[i].Quantity = i + 1;
-		in->num_items++;
-	}
-
-	return;
-}
-
 // getRandomLetterCode generates a code point value for a capital letter.
 // static uint32_t getRandomLetterCode() {
 // 	return 65 + (uint32_t) (rand() % 25);
@@ -147,15 +134,6 @@ static void ShipOrder(ShipOrderRR *rr) {
 	CreateTrackingId(baseAddress, out->TrackingId);
 
 	return;
-}
-
-static void MockShipOrderRequest(ShipOrderRR *rr) {
-	ShipOrderRequest *in = &rr->req;
-	strcpy(in->address.StreetAddress, "1600 Amphitheatre Parkway");
-	strcpy(in->address.City, "Mountain View");
-	strcpy(in->address.State, "CA");
-	strcpy(in->address.Country, "United States");
-	in->address.ZipCode = 94043;
 }
 
 static void handle_request(struct unimsg_sock *s)

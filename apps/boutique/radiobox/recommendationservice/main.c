@@ -134,19 +134,6 @@ Product products[9] = {
 	}
 };
 
-// static void MockListProductsResponse (ListRecommendationsRR *rr) {
-// 	ListProductsResponse *out = &txn->list_products_response;
-
-// 	int size = sizeof(out->Products)/sizeof(out->Products[0]);
-//     int i = 0;
-// 	out->num_products = 0;
-//     for (i = 0; i < size; i++) {
-// 		out->Products[i] = products[i];
-// 		out->num_products++;
-// 	}
-// 	return;
-// }
-
 // ListRecommendations fetch list of products from product catalog stub
 static void ListRecommendations(ListRecommendationsRR *rr)
 {

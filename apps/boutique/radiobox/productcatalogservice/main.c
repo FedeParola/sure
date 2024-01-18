@@ -165,11 +165,6 @@ static void ListProducts(ListProductsResponse *out) {
 	return;
 }
 
-static void MockGetProductRequest(GetProductRR *rr) {
-	GetProductRequest *req = &rr->req;
-	strcpy(req->Id, "2ZYFJ3GM2N");
-}
-
 static void GetProduct(GetProductRR *rr) {
 	GetProductRequest *req = &rr->req;
 
@@ -191,11 +186,6 @@ static void GetProduct(GetProductRR *rr) {
 		printf("no product with ID %s\n", req->Id);
 	}
 	return;
-}
-
-static void MockSearchProductsRequest(SearchProductsRR *rr) {
-	SearchProductsRequest* req = &rr->req;
-	strcpy(req->Query, "outfits");
 }
 
 static void SearchProducts(SearchProductsRR *rr) {

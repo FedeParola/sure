@@ -116,17 +116,6 @@ static void Charge(ChargeRR *rr) {
 	return;
 }
 
-static void MockChargeRequest(ChargeRR *rr) {
-	strcpy(rr->req.CreditCard.CreditCardNumber, "4432801561520454");
-	rr->req.CreditCard.CreditCardCvv = 672;
-	rr->req.CreditCard.CreditCardExpirationYear = 2039;
-	rr->req.CreditCard.CreditCardExpirationMonth = 1;
-
-	strcpy(rr->req.Amount.CurrencyCode, "USD");
-	rr->req.Amount.Units = 300;
-	rr->req.Amount.Nanos = 2;
-}
-
 static void PrintChargeResponse(ChargeRR *rr) {
 	printf("TransactionId: %s\n", rr->res.TransactionId);
 }

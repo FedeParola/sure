@@ -100,13 +100,6 @@ static void AddItemAsync(char *userId, char *productId, int32_t quantity) {
 	return;
 }
 
-static void MockAddItemRequest(AddItemRequest *in) {
-	strcpy(in->UserId, "spright-online-boutique");
-	strcpy(in->Item.ProductId, "OLJCESPC7Z");
-	in->Item.Quantity = 5;
-	return;
-}
-
 static void AddItem(AddItemRequest *in) {
 	printf("[AddItem] received request\n");
 
@@ -132,12 +125,6 @@ static void GetCartAsync(GetCartRR *rr) {
 
 static void GetCart(GetCartRR *rr){
 	GetCartAsync(rr);
-	return;
-}
-
-static void MockGetCartRequest(GetCartRR *rr) {
-	GetCartRequest *in = &rr->req;
-	strcpy(in->UserId, "spright-online-boutique");
 	return;
 }
 
@@ -177,10 +164,6 @@ static void EmptyCart(EmptyCartRequest *in) {
 	printf("[EmptyCart] received request\n");
 	EmptyCartAsync(in);
 	return;
-}
-
-static void MockEmptyCartRequest(EmptyCartRequest *in) {
-	strcpy(in->UserId, "spright-online-boutique");
 }
 
 static void handle_request(struct unimsg_sock *s)

@@ -25,8 +25,8 @@
                       "Hello World\r\n"
 
 #define USER_ID "federico"
-#define CURRENCY "USD"
 
+static char currency[] = "CAD";
 static int dependencies[] = {
 	AD_SERVICE,
 	CURRENCY_SERVICE,
@@ -230,15 +230,13 @@ static void homeHandler(struct unimsg_shm_desc *desc)
 
 	for (int i = 0; i < products->num_products; i++) {
 		/* Discard result */
-		convertCurrency(desc, products->Products[i].PriceUsd, CURRENCY);
+		convertCurrency(desc, products->Products[i].PriceUsd, currency);
 	}
 
 	chooseAd(desc, NULL, 0);
 
 	strcpy(desc->addr, HTTP_RESPONSE);
 	desc->size = strlen(desc->addr);
-
-	return;
 }
 
 static Product getProduct(struct unimsg_shm_desc *desc, char *product_id)
@@ -323,7 +321,7 @@ static void productHandler(struct unimsg_shm_desc *desc, char *arg)
 	getCart(desc, "default_user_id");
 
 	/* Discard result */
-	convertCurrency(desc, p.PriceUsd, CURRENCY);
+	convertCurrency(desc, p.PriceUsd, currency);
 
 	/* Discard result */
 	char *product_id = p.Id;
@@ -336,21 +334,286 @@ static void productHandler(struct unimsg_shm_desc *desc, char *arg)
 	desc->size = strlen(desc->addr);
 }
 
-static void viewCartHandler(struct unimsg_shm_desc *desc) {}
-static void addToCartHandler(struct unimsg_shm_desc *desc) {}
-static void emptyCartHandler(struct unimsg_shm_desc *desc) {}
-static void setCurrencyHandler(struct unimsg_shm_desc *desc) {}
-static void logoutHandler(struct unimsg_shm_desc *desc) {}
-static void placeOrderHandler(struct unimsg_shm_desc *desc) {}
+static Money getShippingQuote(struct unimsg_shm_desc *desc,
+			      CartItem *items, unsigned num_items,
+			      char *currency)
+{
+	int rc;
+
+	ShippingRpc *rpc = desc->addr;
+	desc->size = sizeof(ShippingRpc) + sizeof(GetQuoteRR);
+	rpc->command = SHIPPING_COMMAND_GET_QUOTE;
+	GetQuoteRR *rr = (GetQuoteRR *)rpc->rr;
+
+	memset(&rr->req.address, 0, sizeof(rr->req.address));
+	for (unsigned i = 0; i < num_items; i++)
+		rr->req.Items[i] = items[i];
+	rr->req.num_items = num_items;
+
+	rc = unimsg_send(socks[SHIPPING_SERVICE], desc, 1, 0); 
+	if (rc) {
+		fprintf(stderr, "Error sending desc: %s\n", strerror(-rc));
+		exit(1);
+	}
+
+	unsigned nrecv = 1;
+	rc = unimsg_recv(socks[SHIPPING_SERVICE], desc, &nrecv, 0);
+	if (rc) {
+		fprintf(stderr, "Error receiving desc: %s\n", strerror(-rc));
+		exit(1);
+	}
+
+	if (desc->size != sizeof(ShippingRpc) + sizeof(GetQuoteRR)) {
+		fprintf(stderr, "Received reply of unexpected size\n");
+		exit(1);
+	}
+
+	rpc = desc->addr;
+	rr = (GetQuoteRR *)rpc->rr;
+	Money localized = convertCurrency(desc, rr->res.CostUsd, currency);
+
+	return localized;
+}
+
+#define NANOSMOD 1000000000
+
+static void MoneySum(Money *total, Money *add)
+{
+	total->Units = total->Units + add->Units;
+	total->Nanos = total->Nanos + add->Nanos;
+
+	if ((total->Units == 0 && total->Nanos == 0)
+	    || (total->Units > 0 && total->Nanos >= 0)
+	    || (total->Units < 0 && total->Nanos <= 0)) {
+		// same sign <units, nanos>
+		total->Units += (int64_t)(total->Nanos / NANOSMOD);
+		total->Nanos = total->Nanos % NANOSMOD;
+	} else {
+		// different sign. nanos guaranteed to not to go over the limit
+		if (total->Units > 0) {
+			total->Units--;
+			total->Nanos += NANOSMOD;
+		} else {
+			total->Units++;
+			total->Nanos -= NANOSMOD;
+		}
+	}
+}
+
+static void MoneyMultiplySlow(Money *total, uint32_t n)
+{
+	for (; n > 1 ;) {
+		MoneySum(total, total);
+		n--;
+	}
+}
+
+static void viewCartHandler(struct unimsg_shm_desc *desc)
+{
+	/* Discard result */
+	getCurrencies(desc);
+
+	Cart cart = *getCart(desc, "default_user_id");
+
+	char *product_ids[10];
+	for (int i = 0; i < cart.num_items; i++)
+		product_ids[i] = cart.Items[i].ProductId;
+
+	/* Discard result */
+	getRecommendations(desc, USER_ID, product_ids, cart.num_items);
+
+	Money shipping_cost = getShippingQuote(desc, cart.Items, cart.num_items,
+					       currency);
+
+	Money total_price = {0};
+	for (int i = 0; i < cart.num_items; i++) {
+		Product p = getProduct(desc, cart.Items[i].ProductId);
+		Money price = convertCurrency(desc, p.PriceUsd, currency);
+		MoneyMultiplySlow(&price, cart.Items[i].Quantity);
+		MoneySum(&total_price, &price);
+	}
+	MoneySum(&total_price, &shipping_cost);
+
+	strcpy(desc->addr, HTTP_RESPONSE);
+	desc->size = strlen(desc->addr);
+}
+
+static void insertCart(struct unimsg_shm_desc *desc, char *user_id,
+		       char *product_id, int quantity)
+{
+	int rc;
+
+	CartRpc *rpc = desc->addr;
+	desc->size = sizeof(CartRpc) + sizeof(AddItemRequest);
+	rpc->command = CART_COMMAND_ADD_ITEM;
+	AddItemRequest *req = (AddItemRequest *)rpc->rr;
+
+	strcpy(req->Item.ProductId, product_id);
+	req->Item.Quantity = quantity;
+	strcpy(req->UserId, user_id);
+
+	rc = unimsg_send(socks[CART_SERVICE], desc, 1, 0); 
+	if (rc) {
+		fprintf(stderr, "Error sending desc: %s\n", strerror(-rc));
+		exit(1);
+	}
+
+	unsigned nrecv = 1;
+	rc = unimsg_recv(socks[CART_SERVICE], desc, &nrecv, 0);
+	if (rc) {
+		fprintf(stderr, "Error receiving desc: %s\n", strerror(-rc));
+		exit(1);
+	}
+
+	if (desc->size != sizeof(CartRpc) + sizeof(AddItemRequest)) {
+		fprintf(stderr, "Received reply of unexpected size\n");
+		exit(1);
+	}
+}
+
+#define ADD_TO_CART_QUANTITY 5
+#define ADD_TO_CART_PRODUCT_ID "OLJCESPC7Z"
+
+static void addToCartHandler(struct unimsg_shm_desc *desc, char *body)
+{
+	Product p = getProduct(desc, ADD_TO_CART_PRODUCT_ID);
+
+	insertCart(desc, USER_ID, p.Id, ADD_TO_CART_QUANTITY);
+
+	strcpy(desc->addr, HTTP_RESPONSE);
+	desc->size = strlen(desc->addr);
+}
+
+static void emptyCart(struct unimsg_shm_desc *desc, char *user_id)
+{
+	int rc;
+
+	CartRpc *rpc = desc->addr;
+	desc->size = sizeof(CartRpc) + sizeof(EmptyCartRequest);
+	rpc->command = CART_COMMAND_EMPTY_CART;
+	EmptyCartRequest *req = (EmptyCartRequest *)rpc->rr;
+
+	strcpy(req->UserId, user_id);
+
+	rc = unimsg_send(socks[CART_SERVICE], desc, 1, 0); 
+	if (rc) {
+		fprintf(stderr, "Error sending desc: %s\n", strerror(-rc));
+		exit(1);
+	}
+
+	unsigned nrecv = 1;
+	rc = unimsg_recv(socks[CART_SERVICE], desc, &nrecv, 0);
+	if (rc) {
+		fprintf(stderr, "Error receiving desc: %s\n", strerror(-rc));
+		exit(1);
+	}
+
+	if (desc->size != sizeof(CartRpc) + sizeof(EmptyCartRequest)) {
+		fprintf(stderr, "Received reply of unexpected size\n");
+		exit(1);
+	}
+}
+
+static void emptyCartHandler(struct unimsg_shm_desc *desc)
+{
+	emptyCart(desc, USER_ID);
+
+	strcpy(desc->addr, HTTP_RESPONSE);
+	desc->size = strlen(desc->addr);
+}
+
+#define SET_CURRENCY_CURRENCY "EUR"
+
+static void setCurrencyHandler(struct unimsg_shm_desc *desc, char *body)
+{
+	strcpy(currency, SET_CURRENCY_CURRENCY);
+
+	strcpy(desc->addr, HTTP_RESPONSE);
+	desc->size = strlen(desc->addr);
+}
+
+static void logoutHandler(struct unimsg_shm_desc *desc)
+{
+	strcpy(desc->addr, HTTP_RESPONSE);
+	desc->size = strlen(desc->addr);
+}
+
+#define PLACE_ORDER_EMAIL		"someone@example.com"
+#define PLACE_ORDER_STREET_ADDRESS	"1600 Amphitheatre Parkway"
+#define PLACE_ORDER_ZIP_CODE		94043
+#define PLACE_ORDER_CITY		"Mountain View"
+#define PLACE_ORDER_STATE		"CA"
+#define PLACE_ORDER_COUNTRY		"United States"
+#define PLACE_ORDER_CC_NUMBER		"4432-8015-6152-0454"
+#define PLACE_ORDER_CC_MONTH		1
+#define PLACE_ORDER_CC_YEAR		2039
+#define PLACE_ORDER_CC_CVV		672
+
+static void placeOrderHandler(struct unimsg_shm_desc *desc, char *body)
+{
+	int rc;
+
+	PlaceOrderRR *rr = desc->addr;
+	desc->size = sizeof(PlaceOrderRR);
+
+	strcpy(rr->req.Email, PLACE_ORDER_EMAIL);
+	strcpy(rr->req.address.StreetAddress, PLACE_ORDER_STREET_ADDRESS);
+	rr->req.address.ZipCode = PLACE_ORDER_ZIP_CODE;
+	strcpy(rr->req.address.City, PLACE_ORDER_CITY);
+	strcpy(rr->req.address.State, PLACE_ORDER_STATE);
+	strcpy(rr->req.address.Country, PLACE_ORDER_COUNTRY);
+	strcpy(rr->req.CreditCard.CreditCardNumber, PLACE_ORDER_CC_NUMBER);
+	rr->req.CreditCard.CreditCardExpirationMonth = PLACE_ORDER_CC_MONTH;
+	rr->req.CreditCard.CreditCardExpirationYear = PLACE_ORDER_CC_YEAR;
+	rr->req.CreditCard.CreditCardCvv = PLACE_ORDER_CC_CVV;
+
+	rc = unimsg_send(socks[CHECKOUT_SERVICE], desc, 1, 0); 
+	if (rc) {
+		fprintf(stderr, "Error sending desc: %s\n", strerror(-rc));
+		exit(1);
+	}
+
+	unsigned nrecv = 1;
+	rc = unimsg_recv(socks[CART_SERVICE], desc, &nrecv, 0);
+	if (rc) {
+		fprintf(stderr, "Error receiving desc: %s\n", strerror(-rc));
+		exit(1);
+	}
+
+	if (desc->size != sizeof(PlaceOrderRR)) {
+		fprintf(stderr, "Received reply of unexpected size\n");
+		exit(1);
+	}
+
+	rr = desc->addr;
+
+	/* Discard result */
+	getRecommendations(desc, USER_ID, NULL, 0);
+
+	Money total_paid = rr->res.order.ShippingCost;
+	for (unsigned i = 0; i < rr->res.order.num_items; i++) {
+		Money mult_price = rr->res.order.Items[i].Cost;
+		MoneyMultiplySlow(&mult_price,
+				  rr->res.order.Items[i].Item.Quantity);
+		MoneySum(&total_paid, &mult_price);
+	}
+
+	/* Discard result */
+	getCurrencies(desc);
+
+	strcpy(desc->addr, HTTP_RESPONSE);
+	desc->size = strlen(desc->addr);
+}
 
 static void parse_http_request(struct unimsg_shm_desc *desc, char **method,
 			       char **url, char **body)
 {
 	char *msg = desc->addr;
+
 	/* TODO: handle desc->size == BUFFER_SIZE */
 	msg[desc->size] = 0;
 
-	char *line_end = strchr(msg, '\r');
+	char *line_end = strstr(msg, "\r\n");
 	if (!line_end)
 		HTTP_ERROR();
 
@@ -370,6 +633,11 @@ static void parse_http_request(struct unimsg_shm_desc *desc, char **method,
 	*url_end = 0;
 
 	*url = next;
+
+	*body = strstr(line_end + 1, "\r\n\r\n");
+	if (!*body)
+		HTTP_ERROR();
+	*body += 4;
 }
 
 static void handle_http_request(struct unimsg_shm_desc *desc)
@@ -398,7 +666,7 @@ static void handle_http_request(struct unimsg_shm_desc *desc)
 			viewCartHandler(desc);
 			handled = 1;
 		} else if (!strcmp(method, "POST")) {
-			addToCartHandler(desc);
+			addToCartHandler(desc, body);
 			handled = 1;
 		}
 	} else if (!strcmp(url, "/cart/empty")) {
@@ -408,7 +676,7 @@ static void handle_http_request(struct unimsg_shm_desc *desc)
 		}
 	} else if (!strcmp(url, "/setCurrency")) {
 		if (!strcmp(method, "POST")) {
-			setCurrencyHandler(desc);
+			setCurrencyHandler(desc, body);
 			handled = 1;
 		}
 	} else if (!strcmp(url, "/logout")) {
@@ -418,7 +686,7 @@ static void handle_http_request(struct unimsg_shm_desc *desc)
 		}
 	} else if (!strcmp(url, "/cart/checkout")) {
 		if (!strcmp(method, "POST")) {
-			placeOrderHandler(desc);
+			placeOrderHandler(desc, body);
 			handled = 1;
 		}
 	}

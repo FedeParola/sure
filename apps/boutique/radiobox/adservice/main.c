@@ -2,8 +2,8 @@
  * Some sort of Copyright
  */
 
-#include "../common/service.h"
-#include "../common/messages.h"
+#include "../common/service/service.h"
+#include "../common/service/message.h"
 
 #define MAX_ADS_TO_SERVE 1
 #define ERR_CLOSE(s) ({ unimsg_close(s); exit(1); })
@@ -139,28 +139,12 @@ static void GetAds(AdRR *rr) {
 	printf("[GetAds] completed request\n");
 }
 
-static void handle_request(struct unimsg_sock *s)
+static void handle_request(struct unimsg_shm_desc *descs,
+			   unsigned *ndescs __unused)
 {
-	struct unimsg_shm_desc desc;
-	unsigned nrecv;
-	AdRR *rr;
-
-	nrecv = 1;
-	int rc = unimsg_recv(s, &desc, &nrecv, 0);
-	if (rc) {
-		fprintf(stderr, "Error receiving desc: %s\n", strerror(-rc));
-		ERR_CLOSE(s);
-	}
-
-	rr = desc.addr;
+	AdRR *rr = descs[0].addr;
 
 	GetAds(rr);
-
-	rc = unimsg_send(s, &desc, 1, 0);
-	if (rc) {
-		fprintf(stderr, "Error sending desc: %s\n", strerror(-rc));
-		ERR_PUT(&desc, 1, s);
-	}
 }
 
 int main(int argc, char **argv)

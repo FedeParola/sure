@@ -2,8 +2,8 @@
  * Some sort of Copyright
  */
 
-#ifndef __MESSAGES__
-#define __MESSAGES__
+#ifndef __MESSAGE__
+#define __MESSAGE__
 
 #include <stdint.h>
 
@@ -532,4 +532,4 @@ typedef struct _adrr {
 	AdResponse res;
 } AdRR;
 
-#endif /* __MESSAGES__ */
+#endif /* __MESSAGE__ */

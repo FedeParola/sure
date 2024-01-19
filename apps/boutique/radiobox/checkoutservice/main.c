@@ -3,11 +3,11 @@
  * Copyright (c) 2022 University of California, Riverside
  */
 
-#include "../common/service.h"
-#include "../common/messages.h"
+#include "../common/service/message.h"
+#include "../common/service/service.h"
+#include "../common/service/utilities.h"
 
 #define DEFAULT_UUID "1b4e28ba-2fa1-11d2-883f-0016d3cca427"
-#define NANOSMOD 1000000000
 #define ERR_CLOSE(s) ({ unimsg_close(s); exit(1); })
 #define ERR_PUT(descs, ndescs, s) ({					\
 	unimsg_buffer_put(descs, ndescs);				\
@@ -23,40 +23,6 @@ static int dependencies[] = {
 	EMAIL_SERVICE,
 };
 static struct unimsg_sock *socks[NUM_SERVICES];
-
-static void MoneySum(Money *total, Money *add)
-{
-	total->Units = total->Units + add->Units;
-	total->Nanos = total->Nanos + add->Nanos;
-
-	if ((total->Units == 0 && total->Nanos == 0)
-	    || (total->Units > 0 && total->Nanos >= 0)
-	    || (total->Units < 0 && total->Nanos <= 0)) {
-		// same sign <units, nanos>
-		total->Units += (int64_t)(total->Nanos / NANOSMOD);
-		total->Nanos = total->Nanos % NANOSMOD;
-	} else {
-		// different sign. nanos guaranteed to not to go over the limit
-		if (total->Units > 0) {
-			total->Units--;
-			total->Nanos += NANOSMOD;
-		} else {
-			total->Units++;
-			total->Nanos -= NANOSMOD;
-		}
-	}
-
-	return;
-}
-
-void MoneyMultiplySlow(Money *total, uint32_t n)
-{
-	for (; n > 1 ;) {
-		MoneySum(total, total);
-		n--;
-	}
-	return;
-}
 
 static Cart *getUserCart(struct unimsg_shm_desc *desc, PlaceOrderRR *rr)
 {
@@ -222,6 +188,7 @@ void prepareOrderItemsAndShippingQuoteFromCart(PlaceOrderRR *rr,
 {
 	int rc;
 
+	printf("Getting cart\n");
 	struct unimsg_shm_desc cart_desc;
 	rc = unimsg_buffer_get(&cart_desc, 1); 
 	if (rc) {
@@ -242,6 +209,7 @@ void prepareOrderItemsAndShippingQuoteFromCart(PlaceOrderRR *rr,
 		exit(1);
 	}
 
+	printf("Quoting shipping\n");
 	Money shipping_usd = quoteShipping(&ship_desc, &rr->req.address, cart);
 	*shipping_cost = convertCurrency(&ship_desc, shipping_usd,
 					 rr->req.UserCurrency);
@@ -385,6 +353,8 @@ static void PlaceOrder(PlaceOrderRR *rr)
 	unsigned num_items;
 	Money total;
 
+	printf("Placing order\n");
+
 	/* Allocate a buffer to handle most of the requests to other services */
 	rc = unimsg_buffer_get(&desc, 1); 
 	if (rc) {
@@ -411,6 +381,7 @@ static void PlaceOrder(PlaceOrderRR *rr)
 		MoneySum(&total, &mult_price);
 	}
 
+	printf("Charging card\n");
 	char transaction_id[40];
 	chargeCard(&desc, total, rr->req.CreditCard, transaction_id);
 
@@ -419,33 +390,20 @@ static void PlaceOrder(PlaceOrderRR *rr)
 
 	emptyUserCart(&desc, rr->req.UserId);
 
+	printf("Sending order confirmation\n");
 	sendOrderConfirmation(&desc, rr->req.Email, order);
 
 	unimsg_buffer_put(&desc, 1);
+
+	printf("Order placed\n");
 }
 
-static void handle_request(struct unimsg_sock *s)
+static void handle_request(struct unimsg_shm_desc *descs,
+			   unsigned *ndescs __unused)
 {
-	struct unimsg_shm_desc desc;
-	unsigned nrecv;
-	PlaceOrderRR *rr;
-
-	nrecv = 1;
-	int rc = unimsg_recv(s, &desc, &nrecv, 0);
-	if (rc) {
-		fprintf(stderr, "Error receiving desc: %s\n", strerror(-rc));
-		ERR_CLOSE(s);
-	}
-
-	rr = desc.addr;
+	PlaceOrderRR *rr = descs[0].addr;
 
 	PlaceOrder(rr);
-
-	rc = unimsg_send(s, &desc, 1, 0);
-	if (rc) {
-		fprintf(stderr, "Error sending desc: %s\n", strerror(-rc));
-		ERR_PUT(&desc, 1, s);
-	}
 }
 
 int main(int argc, char **argv)

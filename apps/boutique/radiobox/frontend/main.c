@@ -7,8 +7,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unimsg/net.h>
-#include "../common/service.h"
-#include "../common/messages.h"
+#include "../common/service/message.h"
+#include "../common/service/service.h"
+#include "../common/service/utilities.h"
 
 #define HTTP_ERROR() ({ fprintf(stderr, "HTTP error\n"); exit(0); })
 #define ERR_CLOSE(s) ({ unimsg_close(s); exit(1); })
@@ -18,11 +19,19 @@
 })
 
 #define HTTP_RESPONSE "HTTP/1.1 200 OK\r\n"				\
-                      "Connection: close\r\n"				\
-                      "Content-Type: text/plain\r\n"			\
-                      "Content-Length: 13\r\n"				\
-                      "\r\n"						\
-                      "Hello World\r\n"
+		      "Connection: close\r\n"				\
+		      "Content-Length: 0\r\n"				\
+		      "\r\n"						\
+
+#define HTTP_BAD_REQUEST "HTTP/1.1 400 Bad Request\r\n"			\
+			 "Connection: close\r\n"			\
+			 "Content-Length: 0\r\n"			\
+			 "\r\n"
+
+#define HTTP_NOT_FOUND "HTTP/1.1 404 Not Found\r\n"			\
+		       "Connection: close\r\n"				\
+		       "Content-Length: 0\r\n"				\
+		       "\r\n"
 
 #define USER_ID "federico"
 
@@ -37,16 +46,6 @@ static int dependencies[] = {
 	CHECKOUT_SERVICE
 };
 static struct unimsg_sock *socks[NUM_SERVICES];
-
-// static void setCurrencyHandler(struct http_transaction *txn) {
-// 	printf("Call setCurrencyHandler\n");
-// 	char* query = httpQueryParser(txn->request);
-// 	char _defaultCurrency[5] = "CAD";
-// 	strcpy(_defaultCurrency, strchr(query, '=') + 1);
-
-// 	txn->hop_count += 100;
-// 	txn->next_fn = GATEWAY; // Hack: force gateway to return a response
-// }
 
 static GetSupportedCurrenciesResponse *
 getCurrencies(struct unimsg_shm_desc *desc)
@@ -276,17 +275,13 @@ getRecommendations(struct unimsg_shm_desc *desc, char *user_id,
 {
 	int rc;
 
-	printf("Need to convert id %s\n", *product_ids);
-	printf("Need to convert id %s\n", product_ids[0]);
+	printf("getRecommendations()\n");
 
 	ListRecommendationsRR *rr = desc->addr;
 	desc->size = sizeof(ListRecommendationsRR);
 	strcpy(rr->req.user_id, user_id);
-	for (unsigned i = 0; i < num_product_ids; i++) {
-		printf("Gonna copy %p:'%s' to %p\n", product_ids[i], product_ids[i], rr->req.product_ids[i]);
+	for (unsigned i = 0; i < num_product_ids; i++)
 		strcpy(rr->req.product_ids[i], product_ids[i]);
-		printf("Copied\n");
-	}
 	rr->req.num_product_ids = num_product_ids;
 
 	rc = unimsg_send(socks[RECOMMENDATION_SERVICE], desc, 1, 0); 
@@ -306,6 +301,8 @@ getRecommendations(struct unimsg_shm_desc *desc, char *user_id,
 		fprintf(stderr, "Received reply of unexpected size\n");
 		exit(1);
 	}
+
+	printf("/getRecommendations()\n");
 
 	return &((ListRecommendationsRR *)desc->addr)->res;
 }
@@ -375,39 +372,6 @@ static Money getShippingQuote(struct unimsg_shm_desc *desc,
 	return localized;
 }
 
-#define NANOSMOD 1000000000
-
-static void MoneySum(Money *total, Money *add)
-{
-	total->Units = total->Units + add->Units;
-	total->Nanos = total->Nanos + add->Nanos;
-
-	if ((total->Units == 0 && total->Nanos == 0)
-	    || (total->Units > 0 && total->Nanos >= 0)
-	    || (total->Units < 0 && total->Nanos <= 0)) {
-		// same sign <units, nanos>
-		total->Units += (int64_t)(total->Nanos / NANOSMOD);
-		total->Nanos = total->Nanos % NANOSMOD;
-	} else {
-		// different sign. nanos guaranteed to not to go over the limit
-		if (total->Units > 0) {
-			total->Units--;
-			total->Nanos += NANOSMOD;
-		} else {
-			total->Units++;
-			total->Nanos -= NANOSMOD;
-		}
-	}
-}
-
-static void MoneyMultiplySlow(Money *total, uint32_t n)
-{
-	for (; n > 1 ;) {
-		MoneySum(total, total);
-		n--;
-	}
-}
-
 static void viewCartHandler(struct unimsg_shm_desc *desc)
 {
 	/* Discard result */
@@ -471,14 +435,24 @@ static void insertCart(struct unimsg_shm_desc *desc, char *user_id,
 	}
 }
 
-#define ADD_TO_CART_QUANTITY 5
-#define ADD_TO_CART_PRODUCT_ID "OLJCESPC7Z"
-
 static void addToCartHandler(struct unimsg_shm_desc *desc, char *body)
 {
-	Product p = getProduct(desc, ADD_TO_CART_PRODUCT_ID);
+	char product_id[11];
+	int quantity;
 
-	insertCart(desc, USER_ID, p.Id, ADD_TO_CART_QUANTITY);
+	if (sscanf(body, "product_id=%10s&quantity=%d", product_id, &quantity)
+	    != 2) {
+		strcpy(desc->addr, HTTP_BAD_REQUEST);
+		desc->size = strlen(desc->addr);
+		return;
+	}
+
+	printf("Adding %d units of %s to cart\n", quantity, product_id);
+
+	/* Discard result */
+	getProduct(desc, product_id);
+
+	insertCart(desc, USER_ID, product_id, quantity);
 
 	strcpy(desc->addr, HTTP_RESPONSE);
 	desc->size = strlen(desc->addr);
@@ -522,11 +496,17 @@ static void emptyCartHandler(struct unimsg_shm_desc *desc)
 	desc->size = strlen(desc->addr);
 }
 
-#define SET_CURRENCY_CURRENCY "EUR"
-
 static void setCurrencyHandler(struct unimsg_shm_desc *desc, char *body)
 {
-	strcpy(currency, SET_CURRENCY_CURRENCY);
+	char curr[4];
+	if (sscanf(body, "currency_code=%3s", curr) != 1) {
+		strcpy(desc->addr, HTTP_BAD_REQUEST);
+		desc->size = strlen(desc->addr);
+		return;
+	}
+
+	strcpy(currency, curr);
+	printf("Currency set to %s\n", currency);
 
 	strcpy(desc->addr, HTTP_RESPONSE);
 	desc->size = strlen(desc->addr);
@@ -538,34 +518,89 @@ static void logoutHandler(struct unimsg_shm_desc *desc)
 	desc->size = strlen(desc->addr);
 }
 
-#define PLACE_ORDER_EMAIL		"someone@example.com"
-#define PLACE_ORDER_STREET_ADDRESS	"1600 Amphitheatre Parkway"
-#define PLACE_ORDER_ZIP_CODE		94043
-#define PLACE_ORDER_CITY		"Mountain View"
-#define PLACE_ORDER_STATE		"CA"
-#define PLACE_ORDER_COUNTRY		"United States"
-#define PLACE_ORDER_CC_NUMBER		"4432-8015-6152-0454"
-#define PLACE_ORDER_CC_MONTH		1
-#define PLACE_ORDER_CC_YEAR		2039
-#define PLACE_ORDER_CC_CVV		672
-
-static void placeOrderHandler(struct unimsg_shm_desc *desc, char *body)
+static void placeOrderHandler(struct unimsg_shm_desc *desc, char *body __unused)
 {
 	int rc;
+
+	/* TODO: convert special characters */
+
+	char *param;
+	char *param_end = body - 1;
+
+#define READ_PARAM(name, specifier, dst)				\
+	if (!param_end)	{						\
+		strcpy(desc->addr, HTTP_BAD_REQUEST);			\
+		desc->size = strlen(desc->addr);			\
+		return;							\
+	}								\
+	param = param_end + 1;						\
+	param_end = strchr(param, '&');					\
+	if (param_end)							\
+		*param_end = 0;						\
+	if (sscanf(param, name "=" specifier, dst) != 1) {		\
+		strcpy(desc->addr, HTTP_BAD_REQUEST);			\
+		desc->size = strlen(desc->addr);			\
+		return;							\
+	}
+
+	char email[50];
+	READ_PARAM("email", "%s", email);
+	char street_address[50];
+	READ_PARAM("street_address", "%s", street_address);
+	int zip_code;
+	READ_PARAM("zip_code", "%d", &zip_code);
+	char city[15];
+	READ_PARAM("city", "%s", city);
+	char state[15];
+	READ_PARAM("state", "%s", state);
+	char country[15];
+	READ_PARAM("country", "%s", country);
+	char credit_card_number[30];
+	READ_PARAM("credit_card_number", "%s", credit_card_number);
+	int credit_card_expiration_month;
+	READ_PARAM("credit_card_expiration_month", "%d",
+		   &credit_card_expiration_month);
+	int credit_card_expiration_year;
+	READ_PARAM("credit_card_expiration_year", "%d",
+		   &credit_card_expiration_year);
+	int credit_card_cvv;
+	READ_PARAM("credit_card_cvv", "%d", &credit_card_cvv);
+
+#undef READ_PARAM
+
+	printf("Placing order:\n"
+	       "  email=%s\n"
+	       "  street_address=%s\n"
+	       "  zip_code=%d\n"
+	       "  city=%s\n"
+	       "  state=%s\n"
+	       "  country=%s\n"
+	       "  credit_card_number=%s\n"
+	       "  credit_card_expiration_month=%d\n"
+	       "  credit_card_expiration_year=%d\n"
+	       "  credit_card_cvv=%d\n",
+	       email, street_address, zip_code, city, state, country,
+	       credit_card_number, credit_card_expiration_month,
+	       credit_card_expiration_year, credit_card_cvv);
 
 	PlaceOrderRR *rr = desc->addr;
 	desc->size = sizeof(PlaceOrderRR);
 
-	strcpy(rr->req.Email, PLACE_ORDER_EMAIL);
-	strcpy(rr->req.address.StreetAddress, PLACE_ORDER_STREET_ADDRESS);
-	rr->req.address.ZipCode = PLACE_ORDER_ZIP_CODE;
-	strcpy(rr->req.address.City, PLACE_ORDER_CITY);
-	strcpy(rr->req.address.State, PLACE_ORDER_STATE);
-	strcpy(rr->req.address.Country, PLACE_ORDER_COUNTRY);
-	strcpy(rr->req.CreditCard.CreditCardNumber, PLACE_ORDER_CC_NUMBER);
-	rr->req.CreditCard.CreditCardExpirationMonth = PLACE_ORDER_CC_MONTH;
-	rr->req.CreditCard.CreditCardExpirationYear = PLACE_ORDER_CC_YEAR;
-	rr->req.CreditCard.CreditCardCvv = PLACE_ORDER_CC_CVV;
+	strcpy(rr->req.UserId, USER_ID);
+	strcpy(rr->req.UserCurrency, currency);
+
+	strcpy(rr->req.Email, email);
+	strcpy(rr->req.address.StreetAddress, street_address);
+	rr->req.address.ZipCode = zip_code;
+	strcpy(rr->req.address.City, city);
+	strcpy(rr->req.address.State, state);
+	strcpy(rr->req.address.Country, country);
+	strcpy(rr->req.CreditCard.CreditCardNumber, credit_card_number);
+	rr->req.CreditCard.CreditCardExpirationMonth
+		= credit_card_expiration_month;
+	rr->req.CreditCard.CreditCardExpirationYear
+		= credit_card_expiration_year;
+	rr->req.CreditCard.CreditCardCvv = credit_card_cvv;
 
 	rc = unimsg_send(socks[CHECKOUT_SERVICE], desc, 1, 0); 
 	if (rc) {
@@ -574,7 +609,7 @@ static void placeOrderHandler(struct unimsg_shm_desc *desc, char *body)
 	}
 
 	unsigned nrecv = 1;
-	rc = unimsg_recv(socks[CART_SERVICE], desc, &nrecv, 0);
+	rc = unimsg_recv(socks[CHECKOUT_SERVICE], desc, &nrecv, 0);
 	if (rc) {
 		fprintf(stderr, "Error receiving desc: %s\n", strerror(-rc));
 		exit(1);
@@ -640,15 +675,18 @@ static void parse_http_request(struct unimsg_shm_desc *desc, char **method,
 	*body += 4;
 }
 
-static void handle_http_request(struct unimsg_shm_desc *desc)
+static void handle_request(struct unimsg_shm_desc *descs,
+			   unsigned *ndescs __unused)
 {
 	char *method, *url, *body;
+	struct unimsg_shm_desc *desc = &descs[0];
 
 	parse_http_request(desc, &method, &url, &body);
 
 	int handled = 0;
 
 	printf("Handling %s %s\n", method, url);
+	printf("BODY\n%s\n", body);
 
 	/* Request routing */
 	if (!strcmp(url, "/")) {
@@ -691,14 +729,15 @@ static void handle_http_request(struct unimsg_shm_desc *desc)
 		}
 	}
 
-	if (!handled)
-		HTTP_ERROR();
+	if (!handled) {
+		strcpy(desc->addr, HTTP_NOT_FOUND);
+		desc->size = strlen(desc->addr);
+	}
 }
 
 int main(int argc, char **argv)
 {
 	int rc;
-	struct unimsg_sock *s;
 
 	(void)argc;
 	(void)argv;
@@ -726,59 +765,7 @@ int main(int argc, char **argv)
 		printf("Connected to %s service\n", services[id].name);
 	}
 
-	rc = unimsg_socket(&s);
-	if (rc) {
-		fprintf(stderr, "Error creating unimsg socket: %s\n",
-			strerror(-rc));
-		return 1;
-	}
-
-	rc = unimsg_bind(s, FRONTEND_PORT);
-	if (rc) {
-		fprintf(stderr, "Error binding to port %d: %s\n", FRONTEND_PORT,
-			strerror(-rc));
-		ERR_CLOSE(s);
-	}
-
-	rc = unimsg_listen(s);
-	if (rc) {
-		fprintf(stderr, "Error listening: %s\n", strerror(-rc));
-		ERR_CLOSE(s);
-	}
-
-	printf("Waiting for incoming connections...\n");
-
-	struct unimsg_sock *cs;
-	rc = unimsg_accept(s, &cs, 0);
-	if (rc) {
-		fprintf(stderr, "Error accepting connection: %s\n",
-			strerror(-rc));
-		ERR_CLOSE(s);
-	}
-
-	printf("Client connected\n");
-
-	while (1) {
-		struct unimsg_shm_desc desc;
-		unsigned nrecv;
-
-		nrecv = 1;
-		rc = unimsg_recv(cs, &desc, &nrecv, 0);
-		if (rc) {
-			fprintf(stderr, "Error receiving desc: %s\n",
-				strerror(-rc));
-			ERR_CLOSE(s);
-		}
-
-		handle_http_request(&desc);
-
-		rc = unimsg_send(cs, &desc, 1, 0);
-		if (rc) {
-			fprintf(stderr, "Error sending desc: %s\n",
-				strerror(-rc));
-			ERR_PUT(&desc, 1, s);
-		}
-	}
+	run_service(FRONTEND, handle_request);
 	
 	return 0;
 }

@@ -8,8 +8,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unimsg/net.h>
-#include "../common/service.h"
-#include "../common/messages.h"
+#include "../common/service/service.h"
+#include "../common/service/message.h"
 
 #define ERR_CLOSE(s) ({ unimsg_close(s); exit(1); })
 #define ERR_PUT(descs, ndescs, s) ({					\
@@ -32,24 +32,6 @@ static void PrintUserCart(Cart *cart) {
 	}
 	printf("\n");
 	return;
-}
-
-static void PrintLocalCartStore() {
-	printf("\t\t #### PrintLocalCartStore ####\n");
-
-	struct clib_iterator *myItr;
-	struct clib_object *pElement;
-	myItr = new_iterator_c_map(LocalCartStore);
-	pElement = myItr->get_next(myItr);
-
-	while (pElement) {
-		void* cart = myItr->get_value(pElement);
-		PrintUserCart((Cart*)cart);
-		free(cart);
-		pElement = myItr->get_next(myItr);
-	}
-	delete_iterator_c_map(myItr);
-	printf("\n");
 }
 
 static void AddItemAsync(char *userId, char *productId, int32_t quantity) {
@@ -128,18 +110,6 @@ static void GetCart(GetCartRR *rr){
 	return;
 }
 
-static void PrintGetCartResponse(GetCartRR *rr) {
-	printf("\t\t#### PrintGetCartResponse ####\n");
-	Cart *out = &rr->res;
-	printf("Cart for user %s: \n", out->UserId);
-	int i;
-	for (i = 0; i < out->num_items; i++) {
-		printf("\t%d. ProductId: %s \tQuantity: %d\n", i + 1, out->Items[i].ProductId, out->Items[i].Quantity);
-	}
-	printf("\n");
-	return;
-}
-
 static void EmptyCartAsync(EmptyCartRequest *in) {
 	printf("EmptyCartAsync called with userId=%s\n", in->UserId);
 
@@ -166,20 +136,10 @@ static void EmptyCart(EmptyCartRequest *in) {
 	return;
 }
 
-static void handle_request(struct unimsg_sock *s)
+static void handle_request(struct unimsg_shm_desc *descs,
+			   unsigned *ndescs __unused)
 {
-	struct unimsg_shm_desc desc;
-	unsigned nrecv;
-	CartRpc *rpc;
-
-	nrecv = 1;
-	int rc = unimsg_recv(s, &desc, &nrecv, 0);
-	if (rc) {
-		fprintf(stderr, "Error receiving desc: %s\n", strerror(-rc));
-		ERR_CLOSE(s);
-	}
-
-	rpc = desc.addr;
+	CartRpc *rpc = descs[0].addr;
 
 	switch (rpc->command) {
 	case CART_COMMAND_ADD_ITEM:
@@ -193,12 +153,6 @@ static void handle_request(struct unimsg_sock *s)
 		break;
 	default:
 		fprintf(stderr, "Received unknown command\n");
-	}
-
-	rc = unimsg_send(s, &desc, 1, 0);
-	if (rc) {
-		fprintf(stderr, "Error sending desc: %s\n", strerror(-rc));
-		ERR_PUT(&desc, 1, s);
 	}
 }
 

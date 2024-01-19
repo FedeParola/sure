@@ -4,8 +4,8 @@
  */
 
 // #include <math.h>
-#include "../common/service.h"
-#include "../common/messages.h"
+#include "../common/service/service.h"
+#include "../common/service/message.h"
 
 #define ERR_CLOSE(s) ({ unimsg_close(s); exit(1); })
 #define ERR_PUT(descs, ndescs, s) ({					\
@@ -191,28 +191,12 @@ static void ListRecommendations(ListRecommendationsRR *rr)
 	return;
 }
 
-static void handle_request(struct unimsg_sock *s)
+static void handle_request(struct unimsg_shm_desc *descs,
+			   unsigned *ndescs __unused)
 {
-	struct unimsg_shm_desc desc;
-	unsigned nrecv;
-	ListRecommendationsRR *rr;
-
-	nrecv = 1;
-	int rc = unimsg_recv(s, &desc, &nrecv, 0);
-	if (rc) {
-		fprintf(stderr, "Error receiving desc: %s\n", strerror(-rc));
-		ERR_CLOSE(s);
-	}
-
-	rr = desc.addr;
+	ListRecommendationsRR *rr = descs[0].addr;
 
 	ListRecommendations(rr);
-
-	rc = unimsg_send(s, &desc, 1, 0);
-	if (rc) {
-		fprintf(stderr, "Error sending desc: %s\n", strerror(-rc));
-		ERR_PUT(&desc, 1, s);
-	}
 }
 
 int main(int argc, char **argv)

@@ -20,7 +20,8 @@
 #define CART_SERVICE	       6
 #define RECOMMENDATION_SERVICE 7
 #define CHECKOUT_SERVICE       8
-#define NUM_SERVICES	       9
+#define FRONTEND	       9
+#define NUM_SERVICES	       10
 
 struct service_desc {
 	unsigned id;
@@ -48,20 +49,68 @@ static struct service_desc services[] = {
 	DEFINE_SERVICE(CART_SERVICE, "cart"),
 	DEFINE_SERVICE(RECOMMENDATION_SERVICE, "recommendation"),
 	DEFINE_SERVICE(CHECKOUT_SERVICE, "checkout"),
+	{
+		.id = FRONTEND,
+		.name = "frontend",
+		.addr = SERVICE_ADDR(FRONTEND),
+		.port = 80
+	},
 };
 
-#define FRONTEND_PORT 80
-
-#define MAX_SOCKS 8
 #define _ERR_CLOSE(s) ({ unimsg_close(s); exit(1); })
+#define __unused __attribute__((unused))
 
-__attribute__((unused))
-static void run_service(unsigned id,
-			void (*handle_request)(struct unimsg_sock *))
+typedef void (*handle_request_t)(struct unimsg_shm_desc *descs,
+				 unsigned *ndescs);
+
+static int handle_socket(struct unimsg_sock *s, handle_request_t handle_request)
+{
+	struct unimsg_shm_desc descs[UNIMSG_MAX_DESCS_BULK];
+	unsigned nrecv = UNIMSG_MAX_DESCS_BULK;
+
+	int rc = unimsg_recv(s, descs, &nrecv, 0);
+	if (rc == -ECONNRESET) {
+		unimsg_close(s);
+		printf("Connection closed\n");
+		return 1;
+	} else if (rc) {
+		fprintf(stderr, "Error receiving desc: %s\n", strerror(-rc));
+		_ERR_CLOSE(s);
+	}
+
+	printf("[service] Received request of %d buffers\n", nrecv);
+
+	unsigned nsend = nrecv;
+	handle_request(descs, &nsend);
+
+	rc = unimsg_send(s, descs, nsend, 0);
+	if (rc) {
+		unimsg_buffer_put(descs, nrecv > nsend ? nrecv : nsend);
+		if (rc == -ECONNRESET) {
+			unimsg_close(s);
+			printf("Connection closed\n");
+			return 1;
+		} else if (rc) {
+			fprintf(stderr, "Error sending desc: %s\n",
+				strerror(-rc));
+			_ERR_CLOSE(s);
+		}
+	}
+
+	printf("[service] Sent response of %d buffers\n", nsend);
+	
+	/* Free excess buffers */
+	if (nsend < nrecv)
+		unimsg_buffer_put(descs + nsend, nrecv - nsend);
+
+	return 0;
+}
+
+static void run_service(unsigned id, handle_request_t handle_request)
 {
 	int rc;
-	struct unimsg_sock *socks[MAX_SOCKS];
-	int ready[MAX_SOCKS];
+	struct unimsg_sock *socks[UNIMSG_MAX_NSOCKS];
+	int ready[UNIMSG_MAX_NSOCKS];
 	unsigned nsocks = 1;
 
 	rc = unimsg_socket(&socks[0]);
@@ -94,8 +143,19 @@ static void run_service(unsigned id,
 		}
 
 		for (unsigned i = 1; i < nsocks; i++) {
-			if (ready[i])
-				handle_request(socks[i]);
+			if (ready[i]) {
+				rc = handle_socket(socks[i], handle_request);
+				if (rc) {
+					/* The socket was closed, remove it from
+					 * the list and shift all other sockets
+					 */
+					nsocks--;
+					for (unsigned j = i; j < nsocks; j++) {
+						socks[j] = socks[j + 1];
+						ready[j] = ready[j + 1];
+					}
+				}
+			}
 		}
 
 		if (ready[0]) {

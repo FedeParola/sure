@@ -5,8 +5,8 @@
 
 #include <c_lib.h>
 #include <math.h>
-#include "../common/service.h"
-#include "../common/messages.h"
+#include "../common/service/service.h"
+#include "../common/service/message.h"
 
 #define ERR_CLOSE(s) ({ unimsg_close(s); exit(1); })
 #define ERR_PUT(descs, ndescs, s) ({					\
@@ -108,21 +108,10 @@ static void Convert(CurrencyConversionRR *rr) {
 	return;
 }
 
-static void handle_request(struct unimsg_sock *s)
+static void handle_request(struct unimsg_shm_desc *descs,
+			   unsigned *ndescs __unused)
 {
-	struct unimsg_shm_desc desc;
-	unsigned nrecv;
-	CurrencyRpc *rpc;
-
-	nrecv = 1;
-	int rc = unimsg_recv(s, &desc, &nrecv, 0);
-	if (rc) {
-		fprintf(stderr, "Error receiving desc: %s\n", strerror(-rc));
-		ERR_CLOSE(s);
-	}
-	printf("Received request\n");
-
-	rpc = desc.addr;
+	CurrencyRpc *rpc = descs[0].addr;
 
 	switch (rpc->command) {
 	case CURRENCY_COMMAND_GET_SUPPORTED_CURRENCIES:
@@ -135,13 +124,6 @@ static void handle_request(struct unimsg_sock *s)
 	default:
 		fprintf(stderr, "Received unknown command\n");
 	}
-
-	rc = unimsg_send(s, &desc, 1, 0);
-	if (rc) {
-		fprintf(stderr, "Error sending desc: %s\n", strerror(-rc));
-		ERR_PUT(&desc, 1, s);
-	}
-	printf("Sent response\n");
 }
 
 int main(int argc, char **argv)

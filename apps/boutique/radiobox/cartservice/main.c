@@ -24,18 +24,18 @@ static int compare_e(void* left, void* right ) {
 struct clib_map* LocalCartStore;
 
 static void PrintUserCart(Cart *cart) {
-	printf("Cart for user %s: \n", cart->UserId);
-	printf("## %d items in the cart: ", cart->num_items);
+	DEBUG("Cart for user %s: \n", cart->UserId);
+	DEBUG("## %d items in the cart: ", cart->num_items);
 	int i;
 	for (i = 0; i < cart->num_items; i++) {
-		printf("\t%d. ProductId: %s \tQuantity: %d\n", i + 1, cart->Items[i].ProductId, cart->Items[i].Quantity);
+		DEBUG("\t%d. ProductId: %s \tQuantity: %d\n", i + 1, cart->Items[i].ProductId, cart->Items[i].Quantity);
 	}
-	printf("\n");
+	DEBUG("\n");
 	return;
 }
 
 static void AddItemAsync(char *userId, char *productId, int32_t quantity) {
-	printf("AddItemAsync called with userId=%s, productId=%s, quantity=%d\n", userId, productId, quantity);
+	DEBUG("AddItemAsync called with userId=%s, productId=%s, quantity=%d\n", userId, productId, quantity);
 
 	Cart newCart = {
 		.UserId = "",
@@ -52,20 +52,20 @@ static void AddItemAsync(char *userId, char *productId, int32_t quantity) {
 
 	void* cart;
 	if (clib_true != find_c_map(LocalCartStore, userId, &cart)) {
-		printf("Add new carts for user %s\n", userId);
+		DEBUG("Add new carts for user %s\n", userId);
 		char *key = clib_strdup(userId);
 		int key_length = (int)strlen(key) + 1;
 		newCart.num_items = 1;
-		printf("Inserting [%s -> %s]\n", key, newCart.UserId);
+		DEBUG("Inserting [%s -> %s]\n", key, newCart.UserId);
 		insert_c_map(LocalCartStore, key, key_length, &newCart, sizeof(Cart));
 		free(key);
 	} else {
-		printf("Found carts for user %s\n", userId);
+		DEBUG("Found carts for user %s\n", userId);
 		int cnt = 0;
 		int i;
 		for (i = 0; i < ((Cart*)cart)->num_items; i++) {
 			if (strcmp(((Cart*)cart)->Items[i].ProductId, productId) == 0) { // If the item exists, we update its quantity
-				printf("Update carts for user %s - the item exists, we update its quantity\n", userId);
+				DEBUG("Update carts for user %s - the item exists, we update its quantity\n", userId);
 				((Cart*)cart)->Items[i].Quantity++;
 			} else {
 				cnt++;
@@ -73,7 +73,7 @@ static void AddItemAsync(char *userId, char *productId, int32_t quantity) {
 		}
 
 		if (cnt == ((Cart*)cart)->num_items) { // The item doesn't exist, we update it into DB
-			printf("Update carts for user %s - The item doesn't exist, we update it into DB\n", userId);
+			DEBUG("Update carts for user %s - The item doesn't exist, we update it into DB\n", userId);
 			((Cart*)cart)->num_items++;
 			strcpy(((Cart*)cart)->Items[((Cart*)cart)->num_items].ProductId, productId);
 			((Cart*)cart)->Items[((Cart*)cart)->num_items].Quantity = quantity;
@@ -83,7 +83,7 @@ static void AddItemAsync(char *userId, char *productId, int32_t quantity) {
 }
 
 static void AddItem(AddItemRequest *in) {
-	printf("[AddItem] received request\n");
+	DEBUG("[AddItem] received request\n");
 
 	AddItemAsync(in->UserId, in->Item.ProductId, in->Item.Quantity);
 	return;
@@ -92,11 +92,11 @@ static void AddItem(AddItemRequest *in) {
 static void GetCartAsync(GetCartRR *rr) {
 	GetCartRequest *in = &rr->req;
 	Cart *out = &rr->res;
-	printf("[GetCart] GetCartAsync called with userId=%s\n", in->UserId);
+	DEBUG("[GetCart] GetCartAsync called with userId=%s\n", in->UserId);
 
 	void *cart;
 	if (clib_true != find_c_map(LocalCartStore, in->UserId, &cart)) {
-		printf("No carts for user %s\n", in->UserId);
+		DEBUG("No carts for user %s\n", in->UserId);
 		out->num_items = 0;
 		return;
 	} else {
@@ -111,17 +111,17 @@ static void GetCart(GetCartRR *rr){
 }
 
 static void EmptyCartAsync(EmptyCartRequest *in) {
-	printf("EmptyCartAsync called with userId=%s\n", in->UserId);
+	DEBUG("EmptyCartAsync called with userId=%s\n", in->UserId);
 
 	void *cart;
 	if (clib_true != find_c_map(LocalCartStore, in->UserId, &cart)) {
-		printf("No carts for user %s\n", in->UserId);
+		DEBUG("No carts for user %s\n", in->UserId);
 		// out->num_items = -1;
 		return;
 	} else {
 		int i;
 		for (i = 0; i < ((Cart*)cart)->num_items; i++) {
-			printf("Clean up item %d\n", i + 1);
+			DEBUG("Clean up item %d\n", i + 1);
 			strcpy((*((Cart**)(&cart)))->Items[i].ProductId, "");
 			((*((Cart**)(&cart))))->Items[i].Quantity = 0;
 		}
@@ -131,7 +131,7 @@ static void EmptyCartAsync(EmptyCartRequest *in) {
 }
 
 static void EmptyCart(EmptyCartRequest *in) {
-	printf("[EmptyCart] received request\n");
+	DEBUG("[EmptyCart] received request\n");
 	EmptyCartAsync(in);
 	return;
 }

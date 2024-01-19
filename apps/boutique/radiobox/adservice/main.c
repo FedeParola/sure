@@ -2,15 +2,10 @@
  * Some sort of Copyright
  */
 
-#include "../common/service/service.h"
 #include "../common/service/message.h"
+#include "../common/service/service.h"
 
 #define MAX_ADS_TO_SERVE 1
-#define ERR_CLOSE(s) ({ unimsg_close(s); exit(1); })
-#define ERR_PUT(descs, ndescs, s) ({					\
-	unimsg_buffer_put(descs, ndescs);				\
-	ERR_CLOSE(s);							\
-})
 
 char *ad_name[] = {"clothing", "accessories", "footwear", "hair", "decor", "kitchen"};
 
@@ -34,7 +29,7 @@ static Ad getAdsByCategory(char contextKey[]) {
 		Ad ad = {"/product/6E92ZMYYFZ", "Mug for sale. Buy two, get third one for free"};
 		return ad;
 	} else {
-		printf("No Ad found.\n");
+		DEBUG("No Ad found.\n");
 		Ad ad = {"", ""};
 		return ad;
 	}
@@ -65,13 +60,13 @@ static Ad getRandomAds() {
 			Ad ad = {"/product/6E92ZMYYFZ", "Mug for sale. Buy two, get third one for free"};
 			return ad;
 		} else {
-			printf("No Ad found.\n");
+			DEBUG("No Ad found.\n");
 			Ad ad = {"", ""};
 			return ad;
 		}
 	}
 
-	printf("No Ad found.\n");
+	DEBUG("No Ad found.\n");
 	Ad ad = {"", ""};
 	return ad;
 }
@@ -83,24 +78,14 @@ static AdRequest* GetContextKeys(AdRR *rr) {
 static void PrintContextKeys(AdRequest* ad_request) {
 	int i;
 	for(i = 0; i < ad_request->num_context_keys; i++) {
-		printf("context_word[%d]=%s\t\t", i + 1,
-		       ad_request->ContextKeys[i]);
+		DEBUG("context_word[%d]=%s\t\t", i + 1,
+		      ad_request->ContextKeys[i]);
 	}
-	printf("\n");
-}
-
-static void PrintAdResponse(AdRR *rr) {
-	int i;
-	printf("Ads in AdResponse:\n");
-	for(i = 0; i < rr->res.num_ads; i++) {
-		printf("Ad[%d] RedirectUrl: %s\tText: %s\n", i + 1,
-		       rr->res.Ads[i].RedirectUrl, rr->res.Ads[i].Text);
-	}
-	printf("\n");
+	DEBUG("\n");
 }
 
 static void GetAds(AdRR *rr) {
-	printf("[GetAds] received ad request\n");
+	DEBUG("[GetAds] received ad request\n");
 
 	AdRequest* ad_request = GetContextKeys(rr);
 	PrintContextKeys(&rr->req);
@@ -108,10 +93,10 @@ static void GetAds(AdRR *rr) {
 
 	// []*pb.Ad allAds;
 	if (ad_request->num_context_keys > 0) {
-		printf("Constructing Ads using received context.\n");
+		DEBUG("Constructing Ads using received context.\n");
 		int i;
 		for(i = 0; i < ad_request->num_context_keys; i++) {
-			printf("context_word[%d]=%s\n", i + 1, ad_request->ContextKeys[i]);
+			DEBUG("context_word[%d]=%s\n", i + 1, ad_request->ContextKeys[i]);
 			Ad ad = getAdsByCategory(ad_request->ContextKeys[i]);
 
 			strcpy(rr->res.Ads[i].RedirectUrl, ad.RedirectUrl);
@@ -119,7 +104,7 @@ static void GetAds(AdRR *rr) {
 			rr->res.num_ads++;
 		}
 	} else {
-		printf("No Context provided. Constructing random Ads.\n");
+		DEBUG("No Context provided. Constructing random Ads.\n");
 		Ad ad = getRandomAds();
 		
 		strcpy(rr->res.Ads[0].RedirectUrl, ad.RedirectUrl);
@@ -128,7 +113,7 @@ static void GetAds(AdRR *rr) {
 	}
 
 	if (rr->res.num_ads == 0) {
-		printf("No Ads found based on context. Constructing random Ads.\n");
+		DEBUG("No Ads found based on context. Constructing random Ads.\n");
 		Ad ad = getRandomAds();
 
 		strcpy(rr->res.Ads[0].RedirectUrl, ad.RedirectUrl);
@@ -136,7 +121,7 @@ static void GetAds(AdRR *rr) {
 		rr->res.num_ads++;
 	}
 
-	printf("[GetAds] completed request\n");
+	DEBUG("[GetAds] completed request\n");
 }
 
 static void handle_request(struct unimsg_shm_desc *descs,

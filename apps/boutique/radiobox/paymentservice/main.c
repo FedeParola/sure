@@ -67,7 +67,7 @@ static char* creditcard_validator(int64_t credit_card) {
 }
 
 static void Charge(ChargeRR *rr) {
-	printf("[Charge] received request\n");
+	DEBUG("[Charge] received request\n");
 	ChargeRequest* in = &rr->req;
 
 	Money* amount = &in->Amount;
@@ -81,7 +81,7 @@ static void Charge(ChargeRR *rr) {
 	}
 
 	if (!valid) { // throw InvalidCreditCard 
-		printf("Credit card info is invalid\n");
+		DEBUG("Credit card info is invalid\n");
 		return;
 	}
 
@@ -89,7 +89,7 @@ static void Charge(ChargeRR *rr) {
 	// other card types (AMEX, dinersclub) will
 	// throw UnacceptedCreditCard error.
 	if ((strcmp(cardType, "visa") != 0) && (strcmp(cardType, "mastercard") != 0)) {
-		printf("Sorry, we cannot process %s credit cards. Only VISA or MasterCard is accepted.\n", cardType);
+		DEBUG("Sorry, we cannot process %s credit cards. Only VISA or MasterCard is accepted.\n", cardType);
 		return;
 	}
 
@@ -99,11 +99,11 @@ static void Charge(ChargeRR *rr) {
 	int32_t year = in->CreditCard.CreditCardExpirationYear;
 	int32_t month = in->CreditCard.CreditCardExpirationMonth;
 	if ((currentYear * 12 + currentMonth) > (year * 12 + month)) { // throw ExpiredCreditCard
-		printf("Your credit card (ending %s) expired on %d/%d\n", cardNumber, month, year);
+		DEBUG("Your credit card (ending %s) expired on %d/%d\n", cardNumber, month, year);
 		return;
 	}
 
-	printf("Transaction processed: %s ending %s Amount: %s%ld.%d\n", cardType, cardNumber, amount->CurrencyCode, amount->Units, amount->Nanos);
+	DEBUG("Transaction processed: %s ending %s Amount: %s%ld.%d\n", cardType, cardNumber, amount->CurrencyCode, amount->Units, amount->Nanos);
 	// uuid_t binuuid;
 	// uuid_generate_random(binuuid);
 	// uuid_unparse(binuuid, rr->res.TransactionId);

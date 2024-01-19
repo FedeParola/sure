@@ -18,10 +18,10 @@
 	ERR_CLOSE(s);							\
 })
 
-#define HTTP_RESPONSE "HTTP/1.1 200 OK\r\n"				\
-		      "Connection: close\r\n"				\
-		      "Content-Length: 0\r\n"				\
-		      "\r\n"						\
+#define HTTP_OK "HTTP/1.1 200 OK\r\n"					\
+		"Connection: close\r\n"					\
+		"Content-Length: 0\r\n"					\
+		"\r\n"
 
 #define HTTP_BAD_REQUEST "HTTP/1.1 400 Bad Request\r\n"			\
 			 "Connection: close\r\n"			\
@@ -234,7 +234,7 @@ static void homeHandler(struct unimsg_shm_desc *desc)
 
 	chooseAd(desc, NULL, 0);
 
-	strcpy(desc->addr, HTTP_RESPONSE);
+	strcpy(desc->addr, HTTP_OK);
 	desc->size = strlen(desc->addr);
 }
 
@@ -275,7 +275,7 @@ getRecommendations(struct unimsg_shm_desc *desc, char *user_id,
 {
 	int rc;
 
-	printf("getRecommendations()\n");
+	DEBUG("getRecommendations()\n");
 
 	ListRecommendationsRR *rr = desc->addr;
 	desc->size = sizeof(ListRecommendationsRR);
@@ -302,7 +302,7 @@ getRecommendations(struct unimsg_shm_desc *desc, char *user_id,
 		exit(1);
 	}
 
-	printf("/getRecommendations()\n");
+	DEBUG("/getRecommendations()\n");
 
 	return &((ListRecommendationsRR *)desc->addr)->res;
 }
@@ -327,7 +327,7 @@ static void productHandler(struct unimsg_shm_desc *desc, char *arg)
 	/* Discard result */
 	chooseAd(desc, NULL, 0);
 
-	strcpy(desc->addr, HTTP_RESPONSE);
+	strcpy(desc->addr, HTTP_OK);
 	desc->size = strlen(desc->addr);
 }
 
@@ -398,7 +398,7 @@ static void viewCartHandler(struct unimsg_shm_desc *desc)
 	}
 	MoneySum(&total_price, &shipping_cost);
 
-	strcpy(desc->addr, HTTP_RESPONSE);
+	strcpy(desc->addr, HTTP_OK);
 	desc->size = strlen(desc->addr);
 }
 
@@ -447,14 +447,14 @@ static void addToCartHandler(struct unimsg_shm_desc *desc, char *body)
 		return;
 	}
 
-	printf("Adding %d units of %s to cart\n", quantity, product_id);
+	DEBUG("Adding %d units of %s to cart\n", quantity, product_id);
 
 	/* Discard result */
 	getProduct(desc, product_id);
 
 	insertCart(desc, USER_ID, product_id, quantity);
 
-	strcpy(desc->addr, HTTP_RESPONSE);
+	strcpy(desc->addr, HTTP_OK);
 	desc->size = strlen(desc->addr);
 }
 
@@ -492,7 +492,7 @@ static void emptyCartHandler(struct unimsg_shm_desc *desc)
 {
 	emptyCart(desc, USER_ID);
 
-	strcpy(desc->addr, HTTP_RESPONSE);
+	strcpy(desc->addr, HTTP_OK);
 	desc->size = strlen(desc->addr);
 }
 
@@ -506,15 +506,15 @@ static void setCurrencyHandler(struct unimsg_shm_desc *desc, char *body)
 	}
 
 	strcpy(currency, curr);
-	printf("Currency set to %s\n", currency);
+	DEBUG("Currency set to %s\n", currency);
 
-	strcpy(desc->addr, HTTP_RESPONSE);
+	strcpy(desc->addr, HTTP_OK);
 	desc->size = strlen(desc->addr);
 }
 
 static void logoutHandler(struct unimsg_shm_desc *desc)
 {
-	strcpy(desc->addr, HTTP_RESPONSE);
+	strcpy(desc->addr, HTTP_OK);
 	desc->size = strlen(desc->addr);
 }
 
@@ -568,20 +568,20 @@ static void placeOrderHandler(struct unimsg_shm_desc *desc, char *body __unused)
 
 #undef READ_PARAM
 
-	printf("Placing order:\n"
-	       "  email=%s\n"
-	       "  street_address=%s\n"
-	       "  zip_code=%d\n"
-	       "  city=%s\n"
-	       "  state=%s\n"
-	       "  country=%s\n"
-	       "  credit_card_number=%s\n"
-	       "  credit_card_expiration_month=%d\n"
-	       "  credit_card_expiration_year=%d\n"
-	       "  credit_card_cvv=%d\n",
-	       email, street_address, zip_code, city, state, country,
-	       credit_card_number, credit_card_expiration_month,
-	       credit_card_expiration_year, credit_card_cvv);
+	DEBUG("Placing order:\n"
+	      "  email=%s\n"
+	      "  street_address=%s\n"
+	      "  zip_code=%d\n"
+	      "  city=%s\n"
+	      "  state=%s\n"
+	      "  country=%s\n"
+	      "  credit_card_number=%s\n"
+	      "  credit_card_expiration_month=%d\n"
+	      "  credit_card_expiration_year=%d\n"
+	      "  credit_card_cvv=%d\n",
+	      email, street_address, zip_code, city, state, country,
+	      credit_card_number, credit_card_expiration_month,
+	      credit_card_expiration_year, credit_card_cvv);
 
 	PlaceOrderRR *rr = desc->addr;
 	desc->size = sizeof(PlaceOrderRR);
@@ -636,12 +636,12 @@ static void placeOrderHandler(struct unimsg_shm_desc *desc, char *body __unused)
 	/* Discard result */
 	getCurrencies(desc);
 
-	strcpy(desc->addr, HTTP_RESPONSE);
+	strcpy(desc->addr, HTTP_OK);
 	desc->size = strlen(desc->addr);
 }
 
-static void parse_http_request(struct unimsg_shm_desc *desc, char **method,
-			       char **url, char **body)
+static int parse_http_request(struct unimsg_shm_desc *desc, char **method,
+			      char **url, char **body)
 {
 	char *msg = desc->addr;
 
@@ -650,13 +650,13 @@ static void parse_http_request(struct unimsg_shm_desc *desc, char **method,
 
 	char *line_end = strstr(msg, "\r\n");
 	if (!line_end)
-		HTTP_ERROR();
+		return 1;
 
 	*line_end = 0;
 
 	char *method_end = strchr(msg, ' ');
 	if (!method_end)
-		HTTP_ERROR();
+		return 1;
 	*method_end = 0;
 
 	*method = msg;
@@ -664,15 +664,17 @@ static void parse_http_request(struct unimsg_shm_desc *desc, char **method,
 
 	char *url_end = strchr(next, ' ');
 	if (!url_end)
-		HTTP_ERROR();
+		return 1;
 	*url_end = 0;
 
 	*url = next;
 
 	*body = strstr(line_end + 1, "\r\n\r\n");
 	if (!*body)
-		HTTP_ERROR();
+		return 1;
 	*body += 4;
+
+	return 0;
 }
 
 static void handle_request(struct unimsg_shm_desc *descs,
@@ -681,12 +683,28 @@ static void handle_request(struct unimsg_shm_desc *descs,
 	char *method, *url, *body;
 	struct unimsg_shm_desc *desc = &descs[0];
 
-	parse_http_request(desc, &method, &url, &body);
+	/* Merge all the buffers in the first one in case of a request spread
+	 * across multiple buffers
+	 */
+	for (unsigned i = 1; i < *ndescs; i++) {
+		/* TODO: check we don't exceed the buffer size */
+		memcpy(descs[0].addr + descs[0].size, descs[i].addr,
+		       descs[i].size);
+		descs[0].size += descs[i].size;
+	}
+	*ndescs = 1;
+
+	if (parse_http_request(desc, &method, &url, &body)) {
+		DEBUG("Error parsing request\n");
+		strcpy(desc->addr, HTTP_BAD_REQUEST);
+		desc->size = strlen(desc->addr);
+		return;
+	}
 
 	int handled = 0;
 
-	printf("Handling %s %s\n", method, url);
-	printf("BODY\n%s\n", body);
+	DEBUG("Handling %s %s\n", method, url);
+	DEBUG("BODY\n%s\n", body);
 
 	/* Request routing */
 	if (!strcmp(url, "/")) {
@@ -762,7 +780,7 @@ int main(int argc, char **argv)
 			return 1;
 		}
 
-		printf("Connected to %s service\n", services[id].name);
+		DEBUG("Connected to %s service\n", services[id].name);
 	}
 
 	run_service(FRONTEND, handle_request);

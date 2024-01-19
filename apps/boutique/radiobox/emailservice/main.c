@@ -12,7 +12,7 @@
 })
 
 static void SendOrderConfirmation(SendOrderConfirmationRR *rr) {
-	printf("A request to send order confirmation email to %s has been received\n", rr->req.Email);
+	DEBUG("A request to send order confirmation email to %s has been received\n", rr->req.Email);
 	return;
 }
 

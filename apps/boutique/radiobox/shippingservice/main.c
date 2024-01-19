@@ -47,14 +47,14 @@ static Quote CreateQuoteFromCount(int count) {
 
 // GetQuote produces a shipping quote (cost) in USD.
 static void GetQuote(GetQuoteRR *rr) {
-	printf("[GetQuote] received request\n");
+	DEBUG("[GetQuote] received request\n");
 	
 	GetQuoteRequest* in = &rr->req;
 
 	// 1. Our quote system requires the total number of items to be shipped.
 	int count = 0;
 	int i;
-	// printf("num_items: %d\n", in->num_items);
+	// DEBUG("num_items: %d\n", in->num_items);
 	for (i = 0; i < in->num_items; i++) {
 		count += in->Items[i].Quantity;
 	}
@@ -81,7 +81,7 @@ static void GetQuote(GetQuoteRR *rr) {
 // 	char tmp[40];
 // 	int i;
 // 	for (i = 0; i < digits; i++) {
-// 		sprintf(tmp, "%d", rand() % 10);
+// 		sDEBUG(tmp, "%d", rand() % 10);
 // 		strcat(str, tmp);
 // 	}
 
@@ -103,8 +103,8 @@ static void CreateTrackingId(char *salt, char* out) {
 	memcpy(out, DEFAULT_UUID, sizeof(DEFAULT_UUID));
 
 	// 2. Generate a response.
-	// sprintf(out, "%u%u-%ld%s-%ld%s",
-	// // printf("%s%s-%ld%s-%ld%s",
+	// sDEBUG(out, "%u%u-%ld%s-%ld%s",
+	// // DEBUG("%s%s-%ld%s-%ld%s",
 	// 	getRandomLetterCode(),
 	// 	getRandomLetterCode(),
 	// 	strlen(salt),
@@ -119,7 +119,7 @@ static void CreateTrackingId(char *salt, char* out) {
 // ShipOrder mocks that the requested items will be shipped.
 // It supplies a tracking ID for notional lookup of shipment delivery status.
 static void ShipOrder(ShipOrderRR *rr) {
-	printf("[ShipOrder] received request\n");
+	DEBUG("[ShipOrder] received request\n");
 	ShipOrderRequest *in = &rr->req;
 	
 	// 1. Create a Tracking ID

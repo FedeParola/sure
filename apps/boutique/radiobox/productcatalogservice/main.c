@@ -149,7 +149,7 @@ static void parseCatalog(struct clib_map* map) {
         char *key = clib_strdup(product_ids[i]);
         int key_length = (int)strlen(key) + 1;
         Product value = products[i];
-		printf("Inserting [%s -> %s]\n", key, value.Name);
+		DEBUG("Inserting [%s -> %s]\n", key, value.Name);
         insert_c_map(map, key, key_length, &value, sizeof(Product)); 
         free(key);
     }
@@ -175,7 +175,7 @@ static void GetProduct(GetProductRR *rr) {
 	int i = 0;
 	for (i = 0; i < size; i++ ) {
 		if (strcmp(req->Id, product_ids[i]) == 0) {
-			printf("Get Product: %s\n", product_ids[i]);
+			DEBUG("Get Product: %s\n", product_ids[i]);
 			num_products++;
 			*found = products[i];
 			break;
@@ -183,7 +183,7 @@ static void GetProduct(GetProductRR *rr) {
 	}
 
 	if (num_products == 0) {
-		printf("no product with ID %s\n", req->Id);
+		DEBUG("no product with ID %s\n", req->Id);
 	}
 	return;
 }

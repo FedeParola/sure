@@ -139,7 +139,7 @@ static void ListRecommendations(ListRecommendationsRR *rr)
 {
 	int rc;
 
-	printf("[ListRecommendations] received request\n");
+	DEBUG("[ListRecommendations] received request\n");
 
 	struct unimsg_shm_desc desc;
 	rc = unimsg_buffer_get(&desc, 1); 
@@ -220,7 +220,7 @@ int main(int argc, char **argv)
 		ERR_CLOSE(catalog_sock);
 	}
 
-	printf("Connected to product catalog service\n");
+	DEBUG("Connected to product catalog service\n");
 
 	run_service(RECOMMENDATION_SERVICE, handle_request);
 	

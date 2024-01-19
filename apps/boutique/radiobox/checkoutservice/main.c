@@ -188,7 +188,7 @@ void prepareOrderItemsAndShippingQuoteFromCart(PlaceOrderRR *rr,
 {
 	int rc;
 
-	printf("Getting cart\n");
+	DEBUG("Getting cart\n");
 	struct unimsg_shm_desc cart_desc;
 	rc = unimsg_buffer_get(&cart_desc, 1); 
 	if (rc) {
@@ -209,7 +209,7 @@ void prepareOrderItemsAndShippingQuoteFromCart(PlaceOrderRR *rr,
 		exit(1);
 	}
 
-	printf("Quoting shipping\n");
+	DEBUG("Quoting shipping\n");
 	Money shipping_usd = quoteShipping(&ship_desc, &rr->req.address, cart);
 	*shipping_cost = convertCurrency(&ship_desc, shipping_usd,
 					 rr->req.UserCurrency);
@@ -353,7 +353,7 @@ static void PlaceOrder(PlaceOrderRR *rr)
 	unsigned num_items;
 	Money total;
 
-	printf("Placing order\n");
+	DEBUG("Placing order\n");
 
 	/* Allocate a buffer to handle most of the requests to other services */
 	rc = unimsg_buffer_get(&desc, 1); 
@@ -381,7 +381,7 @@ static void PlaceOrder(PlaceOrderRR *rr)
 		MoneySum(&total, &mult_price);
 	}
 
-	printf("Charging card\n");
+	DEBUG("Charging card\n");
 	char transaction_id[40];
 	chargeCard(&desc, total, rr->req.CreditCard, transaction_id);
 
@@ -390,12 +390,12 @@ static void PlaceOrder(PlaceOrderRR *rr)
 
 	emptyUserCart(&desc, rr->req.UserId);
 
-	printf("Sending order confirmation\n");
+	DEBUG("Sending order confirmation\n");
 	sendOrderConfirmation(&desc, rr->req.Email, order);
 
 	unimsg_buffer_put(&desc, 1);
 
-	printf("Order placed\n");
+	DEBUG("Order placed\n");
 }
 
 static void handle_request(struct unimsg_shm_desc *descs,
@@ -432,7 +432,7 @@ int main(int argc, char **argv)
 			ERR_CLOSE(socks[id]);
 		}
 
-		printf("Connected to %s service\n", services[id].name);
+		DEBUG("Connected to %s service\n", services[id].name);
 	}
 
 	run_service(CHECKOUT_SERVICE, handle_request);

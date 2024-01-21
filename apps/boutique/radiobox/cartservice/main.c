@@ -51,7 +51,7 @@ static void AddItemAsync(char *userId, char *productId, int32_t quantity) {
 	strcpy(newCart.Items[0].ProductId, productId);
 
 	void* cart;
-	if (clib_true != find_c_map(LocalCartStore, userId, &cart)) {
+	if (!find_c_map(LocalCartStore, userId, &cart)) {
 		DEBUG("Add new carts for user %s\n", userId);
 		char *key = clib_strdup(userId);
 		int key_length = (int)strlen(key) + 1;
@@ -95,7 +95,7 @@ static void GetCartAsync(GetCartRR *rr) {
 	DEBUG("[GetCart] GetCartAsync called with userId=%s\n", in->UserId);
 
 	void *cart;
-	if (clib_true != find_c_map(LocalCartStore, in->UserId, &cart)) {
+	if (!find_c_map(LocalCartStore, in->UserId, &cart)) {
 		DEBUG("No carts for user %s\n", in->UserId);
 		out->num_items = 0;
 		return;
@@ -114,7 +114,7 @@ static void EmptyCartAsync(EmptyCartRequest *in) {
 	DEBUG("EmptyCartAsync called with userId=%s\n", in->UserId);
 
 	void *cart;
-	if (clib_true != find_c_map(LocalCartStore, in->UserId, &cart)) {
+	if (!find_c_map(LocalCartStore, in->UserId, &cart)) {
 		DEBUG("No carts for user %s\n", in->UserId);
 		// out->num_items = -1;
 		return;

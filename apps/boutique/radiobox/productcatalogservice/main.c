@@ -14,9 +14,7 @@
 	ERR_CLOSE(s);							\
 })
 
-char *product_ids[] = {"OLJCESPC7Z", "66VCHSJNUP", "1YMWWN1N4O", "L9ECAV7KIM", "2ZYFJ3GM2N", "0PUK6V6EV0", "LS4PSXUNUM", "9SIQT8TOJO", "6E92ZMYYFZ"};
-
-Product products[9] = {
+Product products[] = {
 	{
 		.Id = "OLJCESPC7Z",
 		.Name = "Sunglasses",
@@ -136,74 +134,71 @@ Product products[9] = {
 	}
 };
 
-static int compare_e(void* left, void* right ) {
+static int compare_e(void* left, void* right )
+{
     return strcmp((const char *)left, (const char *)right);
 }
 
 struct clib_map* productcatalog_map;
 
-static void parseCatalog(struct clib_map* map) {
-    int size = sizeof(product_ids)/sizeof(product_ids[0]);
-    int i = 0;
-    for (i = 0; i < size; i++ ) {
-        char *key = clib_strdup(product_ids[i]);
-        int key_length = (int)strlen(key) + 1;
-        Product value = products[i];
+static void parseCatalog(struct clib_map* map)
+{
+	int size = sizeof(products) / sizeof(products[0]);
+	int i = 0;
+	for (i = 0; i < size; i++ ) {
+		char *key = clib_strdup(products[i].Id);
+		int key_length = (int)strlen(key) + 1;
+		Product value = products[i];
 		DEBUG("Inserting [%s -> %s]\n", key, value.Name);
-        insert_c_map(map, key, key_length, &value, sizeof(Product)); 
-        free(key);
-    }
-}
-
-static void ListProducts(ListProductsResponse *out) {
-	int size = sizeof(out->Products)/sizeof(out->Products[0]);
-	out->num_products = 0;
-	for (int i = 0; i < size; i++) {
-		out->Products[i] = products[i];
-		out->num_products++;
+		insert_c_map(map, key, key_length, &value, sizeof(Product)); 
+		free(key);
 	}
-	return;
 }
 
-static void GetProduct(GetProductRR *rr) {
+static void ListProducts(ListProductsResponse *out)
+{
+	out->num_products = sizeof(products) / sizeof(products[0]);
+	for (int i = 0; i < out->num_products; i++)
+		out->Products[i] = products[i];
+}
+
+static void GetProduct(GetProductRR *rr)
+{
 	GetProductRequest *req = &rr->req;
 
 	Product* found = &rr->res;
 	int num_products = 0;
 	
-	int size = sizeof(product_ids)/sizeof(product_ids[0]);
+	int size = sizeof(products) / sizeof(products[0]);
 	int i = 0;
 	for (i = 0; i < size; i++ ) {
-		if (strcmp(req->Id, product_ids[i]) == 0) {
-			DEBUG("Get Product: %s\n", product_ids[i]);
+		if (strcmp(req->Id, products[i].Id) == 0) {
+			DEBUG("Get Product: %s\n", products[i].Id);
 			num_products++;
 			*found = products[i];
 			break;
 		}
 	}
 
-	if (num_products == 0) {
-		DEBUG("no product with ID %s\n", req->Id);
-	}
-	return;
+	if (num_products == 0)
+		DEBUG("No product with ID %s\n", req->Id);
 }
 
-static void SearchProducts(SearchProductsRR *rr) {
+static void SearchProducts(SearchProductsRR *rr)
+{
 	SearchProductsRequest* req = &rr->req;
 	SearchProductsResponse* out = &rr->res;
 	out->num_products = 0;
 
 	/* Intepret query as a substring match in name or description. */
-	int size = sizeof(product_ids) / sizeof(product_ids[0]);
-	int i = 0;
-	for (i = 0; i < size; i++ ) {
+	unsigned size = sizeof(products) / sizeof(products[0]);
+	for (unsigned i = 0; i < size; i++) {
 		if (strstr(products[i].Name, req->Query) != NULL 
 		    || strstr(products[i].Description, req->Query) != NULL ) {
 			out->Results[out->num_products] = products[i];
 			out->num_products++;
 		}
 	}
-	return;
 }
 
 static void handle_request(struct unimsg_shm_desc *descs,

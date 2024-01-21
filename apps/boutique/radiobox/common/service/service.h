@@ -10,11 +10,14 @@
 #include <string.h>
 #include <unimsg/net.h>
 
-#define ENABLE_DEBUG 1
+#ifndef ENABLE_DEBUG
+#define ENABLE_DEBUG 0
+#endif
+
 #if ENABLE_DEBUG
 #define DEBUG(...) printf(__VA_ARGS__)
 #else
-#define DEBUG(...)
+#define DEBUG(...) (void)0
 #endif
 
 /* Service ids */
@@ -78,7 +81,7 @@ static int handle_socket(struct unimsg_sock *s, handle_request_t handle_request)
 	int rc = unimsg_recv(s, descs, &nrecv, 0);
 	if (rc == -ECONNRESET) {
 		unimsg_close(s);
-		DEBUG("Connection closed\n");
+		DEBUG("[service] Connection closed\n");
 		return 1;
 	} else if (rc) {
 		fprintf(stderr, "Error receiving desc: %s\n", strerror(-rc));
@@ -95,7 +98,7 @@ static int handle_socket(struct unimsg_sock *s, handle_request_t handle_request)
 		unimsg_buffer_put(descs, nrecv > nsend ? nrecv : nsend);
 		if (rc == -ECONNRESET) {
 			unimsg_close(s);
-			DEBUG("Connection closed\n");
+			DEBUG("[service] Connection closed\n");
 			return 1;
 		} else if (rc) {
 			fprintf(stderr, "Error sending desc: %s\n",
@@ -140,7 +143,7 @@ static void run_service(unsigned id, handle_request_t handle_request)
 		_ERR_CLOSE(socks[0]);
 	}
 
-	DEBUG("Waiting for incoming connections...\n");
+	DEBUG("[service] Waiting for incoming connections...\n");
 
 	while (1) {
 		rc = unimsg_poll(socks, nsocks, ready);
@@ -176,7 +179,7 @@ static void run_service(unsigned id, handle_request_t handle_request)
 
 			socks[nsocks++] = s;
 
-			DEBUG("New client connected\n");
+			DEBUG("[service] New client connected\n");
 		}
 	}
 }

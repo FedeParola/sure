@@ -23,20 +23,21 @@ static int compare_e(void* left, void* right ) {
 
 struct clib_map* currency_data_map;
 
-static void getCurrencyData(struct clib_map* map) {
-    int size = sizeof(currencies)/sizeof(currencies[0]);
-    int i = 0;
-    for (i = 0; i < size; i++ ) {
-        char *key = clib_strdup(currencies[i]);
-        int key_length = (int)strlen(key) + 1;
-        double value = conversion_rate[i];
+static void getCurrencyData(struct clib_map* map)
+{
+	int size = sizeof(currencies) / sizeof(currencies[0]);
+	for (int i = 0; i < size; i++) {
+		char *key = clib_strdup(currencies[i]);
+		int key_length = (int)strlen(key) + 1;
+		double value = conversion_rate[i];
 		DEBUG("Inserting [%s -> %f]\n", key, value);
-        insert_c_map(map, key, key_length, &value, sizeof(double)); 
-        free(key);
-    }
+		insert_c_map(map, key, key_length, &value, sizeof(double)); 
+		free(key);
+	}
 }
 
-static void GetSupportedCurrencies(GetSupportedCurrenciesResponse *res){
+static void GetSupportedCurrencies(GetSupportedCurrenciesResponse *res)
+{
 	DEBUG("[GetSupportedCurrencies] received request\n");
 
 	res->num_currencies = 0;
@@ -47,23 +48,15 @@ static void GetSupportedCurrencies(GetSupportedCurrenciesResponse *res){
 		strcpy(res->CurrencyCodes[i], currencies[i]);
 	}
 
-	// DEBUG("[GetSupportedCurrencies] completed request\n");
+	DEBUG("[GetSupportedCurrencies] completed request\n");
 	return;
 }
-
-// static void PrintSupportedCurrencies (struct http_transaction *in) {
-// 	DEBUG("Supported Currencies: ");
-// 	int i = 0;
-// 	for (i = 0; i < in->get_supported_currencies_response.num_currencies; i++) {
-// 		DEBUG("%s\t", in->get_supported_currencies_response.CurrencyCodes[i]);
-// 	}
-// 	DEBUG("\n");
-// }
 
 /**
  * Helper function that handles decimal/fractional carrying
  */
-static void Carry(Money* amount) {
+static void Carry(Money* amount)
+{
 	double fractionSize = pow(10, 9);
 	amount->Nanos = amount->Nanos + (int32_t)((double)(amount->Units % 1) * fractionSize);
 	amount->Units = (int64_t)(floor((double)amount->Units) + floor((double)amount->Nanos / fractionSize));
@@ -71,40 +64,45 @@ static void Carry(Money* amount) {
 	return;
 }
 
-static void Convert(CurrencyConversionRR *rr) {
-	DEBUG("[Convert] received request\n");
-	CurrencyConversionRequest* in = &rr->req;
-	Money* euros = &rr->res;
+static void Convert(CurrencyConversionRR *rr)
+{
+	CurrencyConversionRequest *in = &rr->req;
+	Money *euros = &rr->res;
 
-	DEBUG("Requested conversion from %s\n", rr->req.From.CurrencyCode);
-	DEBUG("Requested conversion to %s\n", rr->req.ToCode);
+	DEBUG("[Convert] Requested conversion from '%s' to '%s'\n",
+	      rr->req.From.CurrencyCode, rr->req.ToCode);
 
-	// Convert: from_currency --> EUR
-	void* data;
-	find_c_map(currency_data_map, in->From.CurrencyCode, &data);
-	euros->Units = (int64_t)((double)in->From.Units/ *(double*)data);
-	euros->Nanos = (int32_t)((double)in->From.Nanos/ *(double*)data);
-
-	DEBUG("A\n");
+	/* Convert: from_currency --> EUR */
+	double *rate;
+	if (!find_c_map(currency_data_map, in->From.CurrencyCode,
+			(void **)&rate)) {
+		fprintf(stderr, "Origin currency '%s' not found\n",
+			in->From.CurrencyCode);
+		exit(1);
+	}
+	euros->Units = (int64_t)((double)in->From.Units / *rate);
+	euros->Nanos = (int32_t)((double)in->From.Nanos / *rate);
+	free(rate);
 
 	Carry(euros);
-	euros->Nanos = (int32_t)(round((double) euros->Nanos));
+	euros->Nanos = (int32_t)(round((double)euros->Nanos));
 
-	DEBUG("B\n");
-
-	// Convert: EUR --> to_currency
-	find_c_map(currency_data_map, in->ToCode, &data);
-	euros->Units = (int64_t)((double)euros->Units/ *(double*)data);
-	euros->Nanos = (int32_t)((double)euros->Nanos/ *(double*)data);
+	/* Convert: EUR --> to_currency */
+	if (!find_c_map(currency_data_map, in->ToCode, (void **)&rate)) {
+		fprintf(stderr, "Destination currency '%s' not found\n",
+			in->ToCode);
+		exit(1);
+	}
+	euros->Units = (int64_t)((double)euros->Units / *rate);
+	euros->Nanos = (int32_t)((double)euros->Nanos / *rate);
+	free(rate);
 	Carry(euros);
-
-	DEBUG("C\n");
 
 	euros->Units = (int64_t)(floor((double)(euros->Units)));
 	euros->Nanos = (int32_t)(floor((double)(euros->Nanos)));
 	strcpy(euros->CurrencyCode, in->ToCode);
 
-	DEBUG("[Convert] completed request\n");
+	DEBUG("[Convert] Conversion completed\n");
 	return;
 }
 

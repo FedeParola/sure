@@ -91,7 +91,6 @@ static void GetAds(AdRR *rr) {
 	PrintContextKeys(&rr->req);
 	rr->res.num_ads = 0;
 
-	// []*pb.Ad allAds;
 	if (ad_request->num_context_keys > 0) {
 		DEBUG("Constructing Ads using received context.\n");
 		int i;

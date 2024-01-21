@@ -155,6 +155,9 @@ static Money convertCurrency(struct unimsg_shm_desc *desc, Money price_usd,
 	conv_rr->req.From = price_usd;
 	strcpy(conv_rr->req.ToCode, user_currency);
 
+	DEBUG("Requesting currency conversion from '%s' to '%s'\n",
+	      price_usd.CurrencyCode, user_currency);
+
 	rc = unimsg_send(socks[CURRENCY_SERVICE], desc, 1, 0);
 	if (rc) {
 		fprintf(stderr, "Error sending desc: %s\n", strerror(-rc));
@@ -221,16 +224,29 @@ static void homeHandler(struct unimsg_shm_desc *desc)
 {
 	/* Discard result */
 	getCurrencies(desc);
-	
+
 	/* Discard result */
-	getCart(desc, "default_user_id");
+	getCart(desc, USER_ID);
 
 	ListProductsResponse *products = getProducts(desc);
 
+	DEBUG("Retrieved %d products from catalog\n", products->num_products);
+
+	struct unimsg_shm_desc desc1;
+	int rc = unimsg_buffer_get(&desc1, 1); 
+	if (rc) {
+		fprintf(stderr, "Error getting shm buffer: %s\n",
+			strerror(-rc));
+		exit(1);
+	}
+
 	for (int i = 0; i < products->num_products; i++) {
 		/* Discard result */
-		convertCurrency(desc, products->Products[i].PriceUsd, currency);
+		convertCurrency(&desc1, products->Products[i].PriceUsd,
+				currency);
 	}
+
+	unimsg_buffer_put(&desc1, 1);
 
 	chooseAd(desc, NULL, 0);
 
@@ -315,7 +331,7 @@ static void productHandler(struct unimsg_shm_desc *desc, char *arg)
 	getCurrencies(desc);
 
 	/* Discard result */
-	getCart(desc, "default_user_id");
+	getCart(desc, USER_ID);
 
 	/* Discard result */
 	convertCurrency(desc, p.PriceUsd, currency);
@@ -377,7 +393,7 @@ static void viewCartHandler(struct unimsg_shm_desc *desc)
 	/* Discard result */
 	getCurrencies(desc);
 
-	Cart cart = *getCart(desc, "default_user_id");
+	Cart cart = *getCart(desc, USER_ID);
 
 	char *product_ids[10];
 	for (int i = 0; i < cart.num_items; i++)

@@ -188,6 +188,9 @@ static void ListRecommendations(ListRecommendationsRR *rr)
 	
 	// 3. Generate a response.
 	strcpy(out->product_ids[0], products[recommended_product].Id);
+
+	unimsg_buffer_put(&desc, 1);
+
 	return;
 }
 

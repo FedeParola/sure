@@ -283,6 +283,8 @@ static int do_server_rr(struct unimsg_sock *s)
 		for (unsigned i = 0; i < nsend - 1; i++)
 			descs[i].size = UNIMSG_BUFFER_AVAILABLE;
 		descs[nsend - 1].size = opt_size % UNIMSG_BUFFER_AVAILABLE;
+		if (descs[nsend - 1].size == 0)
+			descs[nsend - 1].size = UNIMSG_BUFFER_AVAILABLE;
 	}
 
 	rc = unimsg_send(s, descs, nsend, 1);

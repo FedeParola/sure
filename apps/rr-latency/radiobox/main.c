@@ -173,6 +173,8 @@ static void do_client_rr(struct unimsg_sock *s)
 		descs[i].size = UNIMSG_BUFFER_AVAILABLE;
 	}
 	descs[ndescs - 1].size = opt_size % UNIMSG_BUFFER_AVAILABLE;
+	if (descs[ndescs - 1].size == 0)
+		descs[ndescs - 1].size = UNIMSG_BUFFER_AVAILABLE;
 	if (opt_http) {
 		strcpy(descs[0].addr, http_req);
 		descs[0].size = sizeof(http_req);
@@ -392,8 +394,10 @@ static void server(struct unimsg_sock *s)
 			sprintf(descs[0].addr, http_resp, http_body_size);
 			for (unsigned i = 0; i < nsend - 1; i++)
 				descs[i].size = UNIMSG_BUFFER_AVAILABLE;
-			descs[nsend - 1].size
-				= opt_size % UNIMSG_BUFFER_AVAILABLE;
+			descs[nsend - 1].size =
+				opt_size % UNIMSG_BUFFER_AVAILABLE;
+			if (descs[nsend - 1].size == 0)
+				descs[nsend - 1].size = UNIMSG_BUFFER_AVAILABLE;
 		}
 
 		do {

@@ -142,7 +142,7 @@ static void ListRecommendations(ListRecommendationsRR *rr)
 	DEBUG("[ListRecommendations] received request\n");
 
 	struct unimsg_shm_desc desc;
-	rc = unimsg_buffer_get(&desc, 1); 
+	rc = unimsg_buffer_get(&desc, 1);
 	if (rc) {
 		fprintf(stderr, "Error getting shm buffer: %s\n",
 			strerror(-rc));
@@ -185,7 +185,7 @@ static void ListRecommendations(ListRecommendationsRR *rr)
 	int product_list_size = sizeof(list_products_response->Products)
 				/ sizeof(list_products_response->Products[0]);
 	int recommended_product = rand() % product_list_size;
-	
+
 	// 3. Generate a response.
 	strcpy(out->product_ids[0], products[recommended_product].Id);
 
@@ -226,6 +226,6 @@ int main(int argc, char **argv)
 	DEBUG("Connected to product catalog service\n");
 
 	run_service(RECOMMENDATION_SERVICE, handle_request);
-	
+
 	return 0;
 }

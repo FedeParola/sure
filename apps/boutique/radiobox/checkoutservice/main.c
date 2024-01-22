@@ -350,7 +350,6 @@ static void PlaceOrder(PlaceOrderRR *rr)
 {
 	int rc;
 	struct unimsg_shm_desc desc;
-	unsigned num_items;
 	Money total;
 
 	DEBUG("Placing order\n");
@@ -367,7 +366,8 @@ static void PlaceOrder(PlaceOrderRR *rr)
 	strcpy(order->OrderId, DEFAULT_UUID);
 	order->ShippingAddress = rr->req.address;
 
-	prepareOrderItemsAndShippingQuoteFromCart(rr, order->Items, &num_items,
+	prepareOrderItemsAndShippingQuoteFromCart(rr, order->Items,
+						  &rr->res.order.num_items,
 						  &order->ShippingCost);
 
 	strcpy(total.CurrencyCode, rr->req.UserCurrency);
@@ -375,7 +375,7 @@ static void PlaceOrder(PlaceOrderRR *rr)
 	total.Units = 0;
 
 	MoneySum(&total, &order->ShippingCost);
-	for (unsigned i = 0; i < num_items; i++) {
+	for (unsigned i = 0; i < rr->res.order.num_items; i++) {
 		Money mult_price = order->Items[i].Cost;
 		MoneyMultiplySlow(&mult_price, order->Items[i].Item.Quantity);
 		MoneySum(&total, &mult_price);
@@ -385,8 +385,8 @@ static void PlaceOrder(PlaceOrderRR *rr)
 	char transaction_id[40];
 	chargeCard(&desc, total, rr->req.CreditCard, transaction_id);
 
-	shipOrder(&desc, &rr->req.address, order->Items, num_items,
-		  order->ShippingTrackingId);
+	shipOrder(&desc, &rr->req.address, order->Items,
+		  rr->res.order.num_items, order->ShippingTrackingId);
 
 	emptyUserCart(&desc, rr->req.UserId);
 

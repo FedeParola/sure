@@ -19,17 +19,17 @@
 })
 
 #define HTTP_OK "HTTP/1.1 200 OK\r\n"					\
-		"Connection: close\r\n"					\
+		"Connection: keep-alive\r\n"				\
 		"Content-Length: 0\r\n"					\
 		"\r\n"
 
 #define HTTP_BAD_REQUEST "HTTP/1.1 400 Bad Request\r\n"			\
-			 "Connection: close\r\n"			\
+			 "Connection: keep-alive\r\n"			\
 			 "Content-Length: 0\r\n"			\
 			 "\r\n"
 
 #define HTTP_NOT_FOUND "HTTP/1.1 404 Not Found\r\n"			\
-		       "Connection: close\r\n"				\
+		       "Connection: keep-alive\r\n"			\
 		       "Content-Length: 0\r\n"				\
 		       "\r\n"
 
@@ -51,6 +51,8 @@ static GetSupportedCurrenciesResponse *
 getCurrencies(struct unimsg_shm_desc *desc)
 {
 	int rc;
+
+	DEBUG("getCurrencies()\n");
 
 	CurrencyRpc *currency_rpc = desc->addr;
 	currency_rpc->command = CURRENCY_COMMAND_GET_SUPPORTED_CURRENCIES;
@@ -75,6 +77,8 @@ getCurrencies(struct unimsg_shm_desc *desc)
 		fprintf(stderr, "Received reply of unexpected size\n");
 		exit(1);
 	}
+
+	DEBUG("/getCurrencies()\n");
 
 	currency_rpc = desc->addr;
 	return (GetSupportedCurrenciesResponse *)currency_rpc->rr;
@@ -121,7 +125,7 @@ static Cart *getCart(struct unimsg_shm_desc *desc, char *user_id)
 	GetCartRR *get_cart_rr = (GetCartRR *)cart_rpc->rr;
 	strcpy(get_cart_rr->req.UserId, user_id);
 
-	rc = unimsg_send(socks[CART_SERVICE], desc, 1, 0); 
+	rc = unimsg_send(socks[CART_SERVICE], desc, 1, 0);
 	if (rc) {
 		fprintf(stderr, "Error sending desc: %s\n", strerror(-rc));
 		exit(1);
@@ -233,7 +237,7 @@ static void homeHandler(struct unimsg_shm_desc *desc)
 	DEBUG("Retrieved %d products from catalog\n", products->num_products);
 
 	struct unimsg_shm_desc desc1;
-	int rc = unimsg_buffer_get(&desc1, 1); 
+	int rc = unimsg_buffer_get(&desc1, 1);
 	if (rc) {
 		fprintf(stderr, "Error getting shm buffer: %s\n",
 			strerror(-rc));
@@ -264,7 +268,7 @@ static Product getProduct(struct unimsg_shm_desc *desc, char *product_id)
 	GetProductRR *rr = (GetProductRR *)rpc->rr;
 	strcpy(rr->req.Id, product_id);
 
-	rc = unimsg_send(socks[PRODUCTCATALOG_SERVICE], desc, 1, 0); 
+	rc = unimsg_send(socks[PRODUCTCATALOG_SERVICE], desc, 1, 0);
 	if (rc) {
 		fprintf(stderr, "Error sending desc: %s\n", strerror(-rc));
 		exit(1);
@@ -300,7 +304,7 @@ getRecommendations(struct unimsg_shm_desc *desc, char *user_id,
 		strcpy(rr->req.product_ids[i], product_ids[i]);
 	rr->req.num_product_ids = num_product_ids;
 
-	rc = unimsg_send(socks[RECOMMENDATION_SERVICE], desc, 1, 0); 
+	rc = unimsg_send(socks[RECOMMENDATION_SERVICE], desc, 1, 0);
 	if (rc) {
 		fprintf(stderr, "Error sending desc: %s\n", strerror(-rc));
 		exit(1);
@@ -363,7 +367,7 @@ static Money getShippingQuote(struct unimsg_shm_desc *desc,
 		rr->req.Items[i] = items[i];
 	rr->req.num_items = num_items;
 
-	rc = unimsg_send(socks[SHIPPING_SERVICE], desc, 1, 0); 
+	rc = unimsg_send(socks[SHIPPING_SERVICE], desc, 1, 0);
 	if (rc) {
 		fprintf(stderr, "Error sending desc: %s\n", strerror(-rc));
 		exit(1);
@@ -432,7 +436,7 @@ static void insertCart(struct unimsg_shm_desc *desc, char *user_id,
 	req->Item.Quantity = quantity;
 	strcpy(req->UserId, user_id);
 
-	rc = unimsg_send(socks[CART_SERVICE], desc, 1, 0); 
+	rc = unimsg_send(socks[CART_SERVICE], desc, 1, 0);
 	if (rc) {
 		fprintf(stderr, "Error sending desc: %s\n", strerror(-rc));
 		exit(1);
@@ -485,7 +489,7 @@ static void emptyCart(struct unimsg_shm_desc *desc, char *user_id)
 
 	strcpy(req->UserId, user_id);
 
-	rc = unimsg_send(socks[CART_SERVICE], desc, 1, 0); 
+	rc = unimsg_send(socks[CART_SERVICE], desc, 1, 0);
 	if (rc) {
 		fprintf(stderr, "Error sending desc: %s\n", strerror(-rc));
 		exit(1);
@@ -618,7 +622,7 @@ static void placeOrderHandler(struct unimsg_shm_desc *desc, char *body __unused)
 		= credit_card_expiration_year;
 	rr->req.CreditCard.CreditCardCvv = credit_card_cvv;
 
-	rc = unimsg_send(socks[CHECKOUT_SERVICE], desc, 1, 0); 
+	rc = unimsg_send(socks[CHECKOUT_SERVICE], desc, 1, 0);
 	if (rc) {
 		fprintf(stderr, "Error sending desc: %s\n", strerror(-rc));
 		exit(1);
@@ -638,8 +642,18 @@ static void placeOrderHandler(struct unimsg_shm_desc *desc, char *body __unused)
 
 	rr = desc->addr;
 
+	struct unimsg_shm_desc desc1;
+	rc = unimsg_buffer_get(&desc1, 1);
+	if (rc) {
+		fprintf(stderr, "Error getting shm buffer: %s\n",
+			strerror(-rc));
+		exit(1);
+	}
+
 	/* Discard result */
-	getRecommendations(desc, USER_ID, NULL, 0);
+	getRecommendations(&desc1, USER_ID, NULL, 0);
+
+	unimsg_buffer_put(&desc1, 1);
 
 	Money total_paid = rr->res.order.ShippingCost;
 	for (unsigned i = 0; i < rr->res.order.num_items; i++) {
@@ -800,6 +814,6 @@ int main(int argc, char **argv)
 	}
 
 	run_service(FRONTEND, handle_request);
-	
+
 	return 0;
 }

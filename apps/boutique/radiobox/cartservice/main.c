@@ -78,6 +78,8 @@ static void AddItemAsync(char *userId, char *productId, int32_t quantity) {
 			strcpy(((Cart*)cart)->Items[((Cart*)cart)->num_items].ProductId, productId);
 			((Cart*)cart)->Items[((Cart*)cart)->num_items].Quantity = quantity;
 		}
+
+		free(cart);
 	}
 	return;
 }
@@ -101,6 +103,7 @@ static void GetCartAsync(GetCartRR *rr) {
 		return;
 	} else {
 		*out = *(Cart*)cart;
+		free(cart);
 		return;
 	}
 }
@@ -126,6 +129,7 @@ static void EmptyCartAsync(EmptyCartRequest *in) {
 			((*((Cart**)(&cart))))->Items[i].Quantity = 0;
 		}
 		PrintUserCart((Cart*)cart);
+		free(cart);
 		return;
 	}
 }

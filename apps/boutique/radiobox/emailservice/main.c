@@ -11,7 +11,7 @@
 	ERR_CLOSE(s);							\
 })
 
-static void SendOrderConfirmation(SendOrderConfirmationRR *rr) {
+static void SendOrderConfirmation(SendOrderConfirmationRR *rr __unused) {
 	DEBUG("A request to send order confirmation email to %s has been received\n", rr->req.Email);
 	return;
 }

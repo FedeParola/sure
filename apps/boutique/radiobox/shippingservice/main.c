@@ -89,7 +89,7 @@ static void GetQuote(GetQuoteRR *rr) {
 // }
 
 // CreateTrackingId generates a tracking ID.
-static void CreateTrackingId(char *salt, char* out) {
+static void CreateTrackingId(char *salt __unused, char* out) {
 	// char random_n_1[40]; getRandomNumber(3, random_n_1);
 	// char random_n_2[40]; getRandomNumber(7, random_n_2);
 

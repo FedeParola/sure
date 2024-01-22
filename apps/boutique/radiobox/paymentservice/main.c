@@ -5,7 +5,6 @@
 #include <math.h>
 // #include <uuid.h>
 #include "../common/service/service.h"
-#include "../common/service/message.h"
 
 #define DEFAULT_UUID "1b4e28ba-2fa1-11d2-883f-0016d3cca427"
 #define ERR_CLOSE(s) ({ unimsg_close(s); exit(1); })
@@ -80,12 +79,12 @@ static void Charge(ChargeRR *rr) {
 		valid = true;
 	}
 
-	if (!valid) { // throw InvalidCreditCard 
+	if (!valid) { // throw InvalidCreditCard
 		DEBUG("Credit card info is invalid\n");
 		return;
 	}
 
-	// Only VISA and mastercard is accepted, 
+	// Only VISA and mastercard is accepted,
 	// other card types (AMEX, dinersclub) will
 	// throw UnacceptedCreditCard error.
 	if ((strcmp(cardType, "visa") != 0) && (strcmp(cardType, "mastercard") != 0)) {
@@ -107,7 +106,7 @@ static void Charge(ChargeRR *rr) {
 	// uuid_t binuuid;
 	// uuid_generate_random(binuuid);
 	// uuid_unparse(binuuid, rr->res.TransactionId);
-	
+
 	/* TODO: Using a constant UUID for now since musl doesn't provide uuid
 	 * functions
 	 */
@@ -119,7 +118,8 @@ static void Charge(ChargeRR *rr) {
 static void handle_request(struct unimsg_shm_desc *descs,
 			   unsigned *ndescs __unused)
 {
-	ChargeRR *rr = descs[0].addr;
+	struct rpc *rpc = descs[0].addr;
+	ChargeRR *rr = (ChargeRR *)rpc->rr;
 
 	Charge(rr);
 }
@@ -130,6 +130,6 @@ int main(int argc, char **argv)
 	(void)argv;
 
 	run_service(PAYMENT_SERVICE, handle_request);
-	
+
 	return 0;
 }

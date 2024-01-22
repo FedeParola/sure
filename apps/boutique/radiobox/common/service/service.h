@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unimsg/net.h>
+#include "message.h"
 
 #ifndef ENABLE_DEBUG
 #define ENABLE_DEBUG 0
@@ -108,7 +109,7 @@ static int handle_socket(struct unimsg_sock *s, handle_request_t handle_request)
 	}
 
 	DEBUG("[service] Sent response of %d buffers\n", nsend);
-	
+
 	/* Free excess buffers */
 	if (nsend < nrecv)
 		unimsg_buffer_put(descs + nsend, nrecv - nsend);
@@ -181,6 +182,31 @@ static void run_service(unsigned id, handle_request_t handle_request)
 
 			DEBUG("[service] New client connected\n");
 		}
+	}
+}
+
+static struct unimsg_sock *socks[NUM_SERVICES];
+
+__unused
+static void do_rpc(struct unimsg_shm_desc *desc, unsigned service,
+		   size_t rr_size)
+{
+	int rc = unimsg_send(socks[service], desc, 1, 0);
+	if (rc) {
+		fprintf(stderr, "Error sending desc: %s\n", strerror(-rc));
+		exit(1);
+	}
+
+	unsigned nrecv = 1;
+	rc = unimsg_recv(socks[service], desc, &nrecv, 0);
+	if (rc) {
+		fprintf(stderr, "Error receiving desc: %s\n", strerror(-rc));
+		exit(1);
+	}
+
+	if (desc->size != sizeof(struct rpc) + rr_size) {
+		fprintf(stderr, "Received reply of unexpected size\n");
+		exit(1);
 	}
 }
 

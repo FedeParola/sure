@@ -6,7 +6,6 @@
 #include <c_lib.h>
 #include <math.h>
 #include "../common/service/service.h"
-#include "../common/service/message.h"
 
 #define ERR_CLOSE(s) ({ unimsg_close(s); exit(1); })
 #define ERR_PUT(descs, ndescs, s) ({					\
@@ -150,7 +149,7 @@ static void parseCatalog(struct clib_map* map)
 		int key_length = (int)strlen(key) + 1;
 		Product value = products[i];
 		DEBUG("Inserting [%s -> %s]\n", key, value.Name);
-		insert_c_map(map, key, key_length, &value, sizeof(Product)); 
+		insert_c_map(map, key, key_length, &value, sizeof(Product));
 		free(key);
 	}
 }
@@ -168,7 +167,7 @@ static void GetProduct(GetProductRR *rr)
 
 	Product* found = &rr->res;
 	int num_products = 0;
-	
+
 	int size = sizeof(products) / sizeof(products[0]);
 	int i = 0;
 	for (i = 0; i < size; i++ ) {
@@ -193,7 +192,7 @@ static void SearchProducts(SearchProductsRR *rr)
 	/* Intepret query as a substring match in name or description. */
 	unsigned size = sizeof(products) / sizeof(products[0]);
 	for (unsigned i = 0; i < size; i++) {
-		if (strstr(products[i].Name, req->Query) != NULL 
+		if (strstr(products[i].Name, req->Query) != NULL
 		    || strstr(products[i].Description, req->Query) != NULL ) {
 			out->Results[out->num_products] = products[i];
 			out->num_products++;
@@ -204,16 +203,16 @@ static void SearchProducts(SearchProductsRR *rr)
 static void handle_request(struct unimsg_shm_desc *descs,
 			   unsigned *ndescs __unused)
 {
-	ProductCatalogRpc *rpc = descs[0].addr;
+	struct rpc *rpc = descs[0].addr;
 
 	switch (rpc->command) {
-	case PRODUCT_CATALOG_COMMAND_LIST_PRODUCTS:
+	case PRODUCTCATALOG_LIST_PRODUCTS:
 		ListProducts((ListProductsResponse *)&rpc->rr);
 		break;
-	case PRODUCT_CATALOG_COMMAND_GET_PRODUCT:
+	case PRODUCTCATALOG_GET_PRODUCT:
 		GetProduct((GetProductRR *)&rpc->rr);
 		break;
-	case PRODUCT_CATALOG_COMMAND_SEARCH_PRODUCTS:
+	case PRODUCTCATALOG_SEARCH_PRODUCTS:
 		SearchProducts((SearchProductsRR *)&rpc->rr);
 		break;
 	default:
@@ -230,6 +229,6 @@ int main(int argc, char **argv)
 	parseCatalog(productcatalog_map);
 
 	run_service(PRODUCTCATALOG_SERVICE, handle_request);
-	
+
 	return 0;
 }

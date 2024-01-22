@@ -5,7 +5,6 @@
 
 #include <math.h>
 #include "../common/service/service.h"
-#include "../common/service/message.h"
 
 #define DEFAULT_UUID "1b4e28ba-2fa1-11d2-883f-0016d3cca427"
 #define ERR_CLOSE(s) ({ unimsg_close(s); exit(1); })
@@ -48,7 +47,7 @@ static Quote CreateQuoteFromCount(int count) {
 // GetQuote produces a shipping quote (cost) in USD.
 static void GetQuote(GetQuoteRR *rr) {
 	DEBUG("[GetQuote] received request\n");
-	
+
 	GetQuoteRequest* in = &rr->req;
 
 	// 1. Our quote system requires the total number of items to be shipped.
@@ -67,7 +66,7 @@ static void GetQuote(GetQuoteRR *rr) {
 	strcpy(out->CostUsd.CurrencyCode, "USD");
 	out->CostUsd.Units = (int64_t) quote.Dollars;
 	out->CostUsd.Nanos = (int32_t) (quote.Cents * 10000000);
-	
+
 	return;
 }
 
@@ -121,7 +120,7 @@ static void CreateTrackingId(char *salt __unused, char* out) {
 static void ShipOrder(ShipOrderRR *rr) {
 	DEBUG("[ShipOrder] received request\n");
 	ShipOrderRequest *in = &rr->req;
-	
+
 	// 1. Create a Tracking ID
 	char baseAddress[100] = "";
 	strcat(baseAddress, in->address.StreetAddress);
@@ -139,13 +138,13 @@ static void ShipOrder(ShipOrderRR *rr) {
 static void handle_request(struct unimsg_shm_desc *descs,
 			   unsigned *ndescs __unused)
 {
-	ShippingRpc *rpc = descs[0].addr;
+	struct rpc *rpc = descs[0].addr;
 
 	switch (rpc->command) {
-	case SHIPPING_COMMAND_GET_QUOTE:
+	case SHIPPING_GET_QUOTE:
 		GetQuote((GetQuoteRR *)&rpc->rr);
 		break;
-	case SHIPPING_COMMAND_SHIP_ORDER:
+	case SHIPPING_SHIP_ORDER:
 		ShipOrder((ShipOrderRR *)&rpc->rr);
 		break;
 	default:
@@ -159,7 +158,6 @@ int main(int argc, char **argv)
 	(void)argv;
 
 	run_service(SHIPPING_SERVICE, handle_request);
-	
+
 	return 0;
 }
-

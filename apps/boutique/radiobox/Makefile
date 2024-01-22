@@ -14,4 +14,4 @@ $(SERVICES):
 clean:
 	for dir in $(SERVICES); do					\
 		$(MAKE) -C $$dir clean;					\
-        done
+	done

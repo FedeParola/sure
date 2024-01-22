@@ -3,7 +3,6 @@
  * Copyright (c) 2022 University of California, Riverside
  */
 
-#include "../common/service/message.h"
 #include "../common/service/service.h"
 #include "../common/service/utilities.h"
 
@@ -22,102 +21,46 @@ static int dependencies[] = {
 	PAYMENT_SERVICE,
 	EMAIL_SERVICE,
 };
-static struct unimsg_sock *socks[NUM_SERVICES];
 
 static Cart *getUserCart(struct unimsg_shm_desc *desc, PlaceOrderRR *rr)
 {
-	int rc;
-
-	CartRpc *cart_rpc = desc->addr;
-	cart_rpc->command = CART_COMMAND_GET_CART;
-	desc->size = sizeof(CartRpc) + sizeof(GetCartRR);
-	GetCartRR *get_cart_rr = (GetCartRR *)cart_rpc->rr;
+	struct rpc *rpc = desc->addr;
+	rpc->command = CART_GET_CART;
+	desc->size = sizeof(*rpc) + sizeof(GetCartRR);
+	GetCartRR *get_cart_rr = (GetCartRR *)rpc->rr;
 	memcpy(get_cart_rr->req.UserId, rr->req.UserId, sizeof(rr->req.UserId));
 
-	rc = unimsg_send(socks[CART_SERVICE], desc, 1, 0); 
-	if (rc) {
-		fprintf(stderr, "Error sending desc: %s\n", strerror(-rc));
-		exit(1);
-	}
+	do_rpc(desc, CART_SERVICE, sizeof(GetCartRR));
 
-	unsigned nrecv = 1;
-	rc = unimsg_recv(socks[CART_SERVICE], desc, &nrecv, 0);
-	if (rc) {
-		fprintf(stderr, "Error receiving desc: %s\n", strerror(-rc));
-		exit(1);
-	}
-
-	if (desc->size != sizeof(CartRpc) + sizeof(GetCartRR)) {
-		fprintf(stderr, "Received reply of unexpected size\n");
-		exit(1);
-	}
-
-	return &((GetCartRR *)((CartRpc *)desc->addr)->rr)->res;
+	return &((GetCartRR *)((struct rpc *)desc->addr)->rr)->res;
 }
 
 static Product *getProduct(struct unimsg_shm_desc *desc, char *product_id)
 {
-	int rc;
+	struct rpc *rpc = desc->addr;
+	rpc->command = PRODUCTCATALOG_GET_PRODUCT;
+	desc->size = sizeof(*rpc) + sizeof(GetProductRR);
+	GetProductRR *rr = (GetProductRR *)rpc->rr;
+	strcpy(rr->req.Id, product_id);
 
-	ProductCatalogRpc *catalog_rpc = desc->addr;
-	catalog_rpc->command = PRODUCT_CATALOG_COMMAND_GET_PRODUCT;
-	desc->size = sizeof(ProductCatalogRpc) + sizeof(GetProductRR);
-	GetProductRR *get_prod_rr = (GetProductRR *)catalog_rpc->rr;
-	strcpy(get_prod_rr->req.Id, product_id);
+	do_rpc(desc, PRODUCTCATALOG_SERVICE, sizeof(GetProductRR));
 
-	rc = unimsg_send(socks[PRODUCTCATALOG_SERVICE], desc, 1, 0); 
-	if (rc) {
-		fprintf(stderr, "Error sending desc: %s\n", strerror(-rc));
-		exit(1);
-	}
-
-	unsigned nrecv = 1;
-	rc = unimsg_recv(socks[PRODUCTCATALOG_SERVICE], desc, &nrecv, 0);
-	if (rc) {
-		fprintf(stderr, "Error receiving desc: %s\n", strerror(-rc));
-		exit(1);
-	}
-
-	if (desc->size != sizeof(ProductCatalogRpc) + sizeof(GetProductRR)) {
-		fprintf(stderr, "Received reply of unexpected size\n");
-		exit(1);
-	}
-
-	return &((GetProductRR *)(((ProductCatalogRpc *)desc->addr)->rr))->res;
+	return &((GetProductRR *)(((struct rpc *)desc->addr)->rr))->res;
 }
 
 static Money convertCurrency(struct unimsg_shm_desc *desc, Money price_usd,
 			     char *user_currency)
 {
-	int rc;
+	struct rpc *rpc = desc->addr;
+	rpc->command = CURRENCY_CONVERT;
+	desc->size = sizeof(*rpc) + sizeof(CurrencyConversionRR);
+	CurrencyConversionRR *rr = (CurrencyConversionRR *)rpc->rr;
+	rr->req.From = price_usd;
+	strcpy(rr->req.ToCode, user_currency);
 
-	CurrencyRpc *currency_rpc = desc->addr;
-	currency_rpc->command = CURRENCY_COMMAND_CONVERT;
-	desc->size = sizeof(CurrencyRpc) + sizeof(CurrencyConversionRR);
-	CurrencyConversionRR *conv_rr =
-		(CurrencyConversionRR *)currency_rpc->rr;
-	conv_rr->req.From = price_usd;
-	strcpy(conv_rr->req.ToCode, user_currency);
+	do_rpc(desc, CURRENCY_SERVICE, sizeof(CurrencyConversionRR));
 
-	rc = unimsg_send(socks[CURRENCY_SERVICE], desc, 1, 0);
-	if (rc) {
-		fprintf(stderr, "Error sending desc: %s\n", strerror(-rc));
-		exit(1);
-	}
-
-	unsigned nrecv = 1;
-	rc = unimsg_recv(socks[CURRENCY_SERVICE], desc, &nrecv, 0);
-	if (rc) {
-		fprintf(stderr, "Error receiving desc: %s\n", strerror(-rc));
-		exit(1);
-	}
-
-	if (desc->size != sizeof(CurrencyRpc) + sizeof(CurrencyConversionRR)) {
-		fprintf(stderr, "Received reply of unexpected size\n");
-		exit(1);
-	}
-
-	return ((CurrencyConversionRR *)((CurrencyRpc *)desc->addr)->rr)->res;
+	return ((CurrencyConversionRR *)((struct rpc *)desc->addr)->rr)->res;
 }
 
 static void prepOrderItems(Cart *cart, char *user_currency,
@@ -126,7 +69,7 @@ static void prepOrderItems(Cart *cart, char *user_currency,
 	int rc;
 	struct unimsg_shm_desc desc;
 
-	rc = unimsg_buffer_get(&desc, 1); 
+	rc = unimsg_buffer_get(&desc, 1);
 	if (rc) {
 		fprintf(stderr, "Error getting shm buffer: %s\n",
 			strerror(-rc));
@@ -150,35 +93,17 @@ static void prepOrderItems(Cart *cart, char *user_currency,
 static Money quoteShipping(struct unimsg_shm_desc *desc, Address *address,
 			   Cart *cart)
 {
-	int rc;
-
-	ShippingRpc *rpc = desc->addr;
-	rpc->command = SHIPPING_COMMAND_GET_QUOTE;
-	desc->size = sizeof(ShippingRpc) + sizeof(GetQuoteRR);
+	struct rpc *rpc = desc->addr;
+	rpc->command = SHIPPING_GET_QUOTE;
+	desc->size = sizeof(*rpc) + sizeof(GetQuoteRR);
 	GetQuoteRR *rr = (GetQuoteRR *)rpc->rr;
 	rr->req.address = *address;
 	rr->req.num_items = cart->num_items;
 	memcpy(rr->req.Items, cart->Items, sizeof(CartItem) * cart->num_items);
 
-	rc = unimsg_send(socks[SHIPPING_SERVICE], desc, 1, 0);
-	if (rc) {
-		fprintf(stderr, "Error sending desc: %s\n", strerror(-rc));
-		exit(1);
-	}
+	do_rpc(desc, SHIPPING_SERVICE, sizeof(GetQuoteRR));
 
-	unsigned nrecv = 1;
-	rc = unimsg_recv(socks[SHIPPING_SERVICE], desc, &nrecv, 0);
-	if (rc) {
-		fprintf(stderr, "Error receiving desc: %s\n", strerror(-rc));
-		exit(1);
-	}
-
-	if (desc->size != sizeof(ShippingRpc) + sizeof(GetQuoteRR)) {
-		fprintf(stderr, "Received reply of unexpected size\n");
-		exit(1);
-	}
-
-	return ((GetQuoteRR *)((ShippingRpc *)desc->addr)->rr)->res.CostUsd;
+	return ((GetQuoteRR *)((struct rpc *)desc->addr)->rr)->res.CostUsd;
 }
 
 void prepareOrderItemsAndShippingQuoteFromCart(PlaceOrderRR *rr,
@@ -190,7 +115,7 @@ void prepareOrderItemsAndShippingQuoteFromCart(PlaceOrderRR *rr,
 
 	DEBUG("Getting cart\n");
 	struct unimsg_shm_desc cart_desc;
-	rc = unimsg_buffer_get(&cart_desc, 1); 
+	rc = unimsg_buffer_get(&cart_desc, 1);
 	if (rc) {
 		fprintf(stderr, "Error getting shm buffer: %s\n",
 			strerror(-rc));
@@ -202,7 +127,7 @@ void prepareOrderItemsAndShippingQuoteFromCart(PlaceOrderRR *rr,
 		       num_order_items);
 
 	struct unimsg_shm_desc ship_desc;
-	rc = unimsg_buffer_get(&ship_desc, 1); 
+	rc = unimsg_buffer_get(&ship_desc, 1);
 	if (rc) {
 		fprintf(stderr, "Error getting shm buffer: %s\n",
 			strerror(-rc));
@@ -221,32 +146,15 @@ void prepareOrderItemsAndShippingQuoteFromCart(PlaceOrderRR *rr,
 static void chargeCard(struct unimsg_shm_desc *desc, Money amount,
 		       CreditCardInfo paymentInfo, char *transaction_id)
 {
-	int rc;
-
-	ChargeRR *rr = desc->addr;
-	desc->size = sizeof(ChargeRR);
+	struct rpc *rpc = desc->addr;
+	desc->size = sizeof(*rpc) + sizeof(ChargeRR);
+	ChargeRR *rr = (ChargeRR *)rpc->rr;
 	rr->req.Amount = amount;
 	rr->req.CreditCard = paymentInfo;
 
-	rc = unimsg_send(socks[PAYMENT_SERVICE], desc, 1, 0);
-	if (rc) {
-		fprintf(stderr, "Error sending desc: %s\n", strerror(-rc));
-		exit(1);
-	}
+	do_rpc(desc, PAYMENT_SERVICE, sizeof(ChargeRR));
 
-	unsigned nrecv = 1;
-	rc = unimsg_recv(socks[PAYMENT_SERVICE], desc, &nrecv, 0);
-	if (rc) {
-		fprintf(stderr, "Error receiving desc: %s\n", strerror(-rc));
-		exit(1);
-	}
-
-	if (desc->size != sizeof(ChargeRR)) {
-		fprintf(stderr, "Received reply of unexpected size\n");
-		exit(1);
-	}
-
-	rr = desc->addr;
+	rr = (ChargeRR *)((struct rpc *)desc->addr)->rr;
 	strcpy(transaction_id, rr->res.TransactionId);
 }
 
@@ -254,33 +162,15 @@ static void shipOrder(struct unimsg_shm_desc *desc,
 		      Address *address, OrderItem *items, unsigned num_items,
 		      char *tracking_id)
 {
-	int rc;
-
-	ShippingRpc *rpc = desc->addr;
-	desc->size = sizeof(ShippingRpc) + sizeof(ShipOrderRR);
-	rpc->command = SHIPPING_COMMAND_SHIP_ORDER;
+	struct rpc *rpc = desc->addr;
+	desc->size = sizeof(*rpc) + sizeof(ShipOrderRR);
+	rpc->command = SHIPPING_SHIP_ORDER;
 	ShipOrderRR *rr = (ShipOrderRR *)rpc->rr;
 	rr->req.address = *address;
 	for (unsigned i = 0; i < num_items; i++)
 		rr->req.Items[i] = items[i].Item;
 
-	rc = unimsg_send(socks[SHIPPING_SERVICE], desc, 1, 0);
-	if (rc) {
-		fprintf(stderr, "Error sending desc: %s\n", strerror(-rc));
-		exit(1);
-	}
-
-	unsigned nrecv = 1;
-	rc = unimsg_recv(socks[SHIPPING_SERVICE], desc, &nrecv, 0);
-	if (rc) {
-		fprintf(stderr, "Error receiving desc: %s\n", strerror(-rc));
-		exit(1);
-	}
-
-	if (desc->size != sizeof(ShippingRpc) + sizeof(ShipOrderRR)) {
-		fprintf(stderr, "Received reply of unexpected size\n");
-		exit(1);
-	}
+	do_rpc(desc, SHIPPING_SERVICE, sizeof(ShipOrderRR));
 
 	rpc = desc->addr;
 	rr = (ShipOrderRR *)rpc->rr;
@@ -289,61 +179,26 @@ static void shipOrder(struct unimsg_shm_desc *desc,
 
 static void emptyUserCart(struct unimsg_shm_desc *desc, char *user_id)
 {
-	int rc;
-
-	CartRpc *rpc = desc->addr;
-	desc->size = sizeof(CartRpc) + sizeof(EmptyCartRequest);
-	rpc->command = CART_COMMAND_EMPTY_CART;
+	struct rpc *rpc = desc->addr;
+	desc->size = sizeof(*rpc) + sizeof(EmptyCartRequest);
+	rpc->command = CART_EMPTY_CART;
 	EmptyCartRequest *req = (EmptyCartRequest *)rpc->rr;
 	strcpy(req->UserId, user_id);
 
-	rc = unimsg_send(socks[CART_SERVICE], desc, 1, 0);
-	if (rc) {
-		fprintf(stderr, "Error sending desc: %s\n", strerror(-rc));
-		exit(1);
-	}
-
-	unsigned nrecv = 1;
-	rc = unimsg_recv(socks[CART_SERVICE], desc, &nrecv, 0);
-	if (rc) {
-		fprintf(stderr, "Error receiving desc: %s\n", strerror(-rc));
-		exit(1);
-	}
-
-	if (desc->size != sizeof(CartRpc) + sizeof(EmptyCartRequest)) {
-		fprintf(stderr, "Received reply of unexpected size\n");
-		exit(1);
-	}
+	do_rpc(desc, CART_SERVICE, sizeof(EmptyCartRequest));
 }
 
 
 static void sendOrderConfirmation(struct unimsg_shm_desc *desc, char *email,
 				  OrderResult *order)
 {
-	int rc;
-
-	SendOrderConfirmationRR *rr = desc->addr;
-	desc->size = sizeof(SendOrderConfirmationRR);
+	struct rpc *rpc = desc->addr;
+	desc->size = sizeof(*rpc) + sizeof(SendOrderConfirmationRR);
+	SendOrderConfirmationRR *rr = (SendOrderConfirmationRR *)rpc->rr;
 	strcpy(rr->req.Email , email);
 	rr->req.Order = *order;
 
-	rc = unimsg_send(socks[EMAIL_SERVICE], desc, 1, 0);
-	if (rc) {
-		fprintf(stderr, "Error sending desc: %s\n", strerror(-rc));
-		exit(1);
-	}
-
-	unsigned nrecv = 1;
-	rc = unimsg_recv(socks[EMAIL_SERVICE], desc, &nrecv, 0);
-	if (rc) {
-		fprintf(stderr, "Error receiving desc: %s\n", strerror(-rc));
-		exit(1);
-	}
-
-	if (desc->size != sizeof(SendOrderConfirmationRR)) {
-		fprintf(stderr, "Received reply of unexpected size\n");
-		exit(1);
-	}
+	do_rpc(desc, EMAIL_SERVICE, sizeof(SendOrderConfirmationRR));
 }
 
 static void PlaceOrder(PlaceOrderRR *rr)
@@ -355,7 +210,7 @@ static void PlaceOrder(PlaceOrderRR *rr)
 	DEBUG("Placing order\n");
 
 	/* Allocate a buffer to handle most of the requests to other services */
-	rc = unimsg_buffer_get(&desc, 1); 
+	rc = unimsg_buffer_get(&desc, 1);
 	if (rc) {
 		fprintf(stderr, "Error getting shm buffer: %s\n",
 			strerror(-rc));
@@ -401,7 +256,8 @@ static void PlaceOrder(PlaceOrderRR *rr)
 static void handle_request(struct unimsg_shm_desc *descs,
 			   unsigned *ndescs __unused)
 {
-	PlaceOrderRR *rr = descs[0].addr;
+	struct rpc *rpc = descs[0].addr;
+	PlaceOrderRR *rr = (PlaceOrderRR *)rpc->rr;
 
 	PlaceOrder(rr);
 }
@@ -436,6 +292,6 @@ int main(int argc, char **argv)
 	}
 
 	run_service(CHECKOUT_SERVICE, handle_request);
-	
+
 	return 0;
 }

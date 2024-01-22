@@ -6,7 +6,6 @@
 #include <c_lib.h>
 #include <math.h>
 #include "../common/service/service.h"
-#include "../common/service/message.h"
 
 #define ERR_CLOSE(s) ({ unimsg_close(s); exit(1); })
 #define ERR_PUT(descs, ndescs, s) ({					\
@@ -31,7 +30,7 @@ static void getCurrencyData(struct clib_map* map)
 		int key_length = (int)strlen(key) + 1;
 		double value = conversion_rate[i];
 		DEBUG("Inserting [%s -> %f]\n", key, value);
-		insert_c_map(map, key, key_length, &value, sizeof(double)); 
+		insert_c_map(map, key, key_length, &value, sizeof(double));
 		free(key);
 	}
 }
@@ -109,14 +108,14 @@ static void Convert(CurrencyConversionRR *rr)
 static void handle_request(struct unimsg_shm_desc *descs,
 			   unsigned *ndescs __unused)
 {
-	CurrencyRpc *rpc = descs[0].addr;
+	struct rpc *rpc = descs[0].addr;
 
 	switch (rpc->command) {
-	case CURRENCY_COMMAND_GET_SUPPORTED_CURRENCIES:
+	case CURRENCY_GET_SUPPORTED_CURRENCIES:
 		GetSupportedCurrencies(
 			(GetSupportedCurrenciesResponse *)&rpc->rr);
 		break;
-	case CURRENCY_COMMAND_CONVERT:
+	case CURRENCY_CONVERT:
 		Convert((CurrencyConversionRR *)&rpc->rr);
 		break;
 	default:
@@ -133,6 +132,6 @@ int main(int argc, char **argv)
 	getCurrencyData(currency_data_map);
 
 	run_service(CURRENCY_SERVICE, handle_request);
-	
+
 	return 0;
 }

@@ -3,7 +3,6 @@
  */
 
 #include "../common/service/service.h"
-#include "../common/service/message.h"
 
 #define ERR_CLOSE(s) ({ unimsg_close(s); exit(1); })
 #define ERR_PUT(descs, ndescs, s) ({					\
@@ -19,7 +18,8 @@ static void SendOrderConfirmation(SendOrderConfirmationRR *rr __unused) {
 static void handle_request(struct unimsg_shm_desc *descs,
 			   unsigned *ndescs __unused)
 {
-	SendOrderConfirmationRR *rr = descs[0].addr;
+	struct rpc *rpc = descs[0].addr;
+	SendOrderConfirmationRR *rr = (SendOrderConfirmationRR *)rpc->rr;
 
 	SendOrderConfirmation(rr);
 }
@@ -30,6 +30,6 @@ int main(int argc, char **argv)
 	(void)argv;
 
 	run_service(EMAIL_SERVICE, handle_request);
-	
+
 	return 0;
 }

@@ -5,7 +5,6 @@
 
 // #include <math.h>
 #include "../common/service/service.h"
-#include "../common/service/message.h"
 
 #define ERR_CLOSE(s) ({ unimsg_close(s); exit(1); })
 #define ERR_PUT(descs, ndescs, s) ({					\
@@ -13,7 +12,9 @@
 	ERR_CLOSE(s);							\
 })
 
-static struct unimsg_sock *catalog_sock;
+static int dependencies[] = {
+	PRODUCTCATALOG_SERVICE,
+};
 Product products[9] = {
 	{
 		.Id = "OLJCESPC7Z",
@@ -146,34 +147,18 @@ static void ListRecommendations(ListRecommendationsRR *rr)
 	if (rc) {
 		fprintf(stderr, "Error getting shm buffer: %s\n",
 			strerror(-rc));
-		ERR_CLOSE(catalog_sock);
+		exit(1);
 	}
 
-	ProductCatalogRpc *cat_rpc = desc.addr;
-	cat_rpc->command = PRODUCT_CATALOG_COMMAND_LIST_PRODUCTS;
-	desc.size = sizeof(ProductCatalogRpc) + sizeof(ListProductsResponse);
+	struct rpc *rpc = desc.addr;
+	rpc->command = PRODUCTCATALOG_LIST_PRODUCTS;
+	desc.size = sizeof(*rpc) + sizeof(ListProductsResponse);
 
-	if (unimsg_send(catalog_sock, &desc, 1, 0)) {
-		fprintf(stderr, "Error sending desc: %s\n", strerror(-rc));
-		ERR_CLOSE(catalog_sock);
-	}
+	do_rpc(&desc, PRODUCTCATALOG_SERVICE, sizeof(ListProductsResponse));
 
-	unsigned nrecv = 1;
-	if (unimsg_recv(catalog_sock, &desc, &nrecv, 0)) {
-		fprintf(stderr, "Error receiving desc: %s\n", strerror(-rc));
-		ERR_CLOSE(catalog_sock);
-	}
-
-	if (desc.size
-	    != sizeof(ProductCatalogRpc) + sizeof(ListProductsResponse)) {
-		fprintf(stderr, "Received reply of unexpected size: %s\n",
-			strerror(-rc));
-		ERR_CLOSE(catalog_sock);
-	}
-
-	cat_rpc = desc.addr;
+	rpc = desc.addr;
 	ListProductsResponse *list_products_response =
-		(ListProductsResponse *)cat_rpc->rr;
+		(ListProductsResponse *)rpc->rr;
 	ListRecommendationsRequest *list_recommendations_request = &rr->req;
 	ListRecommendationsResponse *out = &rr->res;
 
@@ -197,7 +182,8 @@ static void ListRecommendations(ListRecommendationsRR *rr)
 static void handle_request(struct unimsg_shm_desc *descs,
 			   unsigned *ndescs __unused)
 {
-	ListRecommendationsRR *rr = descs[0].addr;
+	struct rpc *rpc = descs[0].addr;
+	ListRecommendationsRR *rr = (ListRecommendationsRR *)rpc->rr;
 
 	ListRecommendations(rr);
 }
@@ -209,21 +195,28 @@ int main(int argc, char **argv)
 	(void)argc;
 	(void)argv;
 
-	rc = unimsg_socket(&catalog_sock);
-	if (rc) {
-		fprintf(stderr, "Error creating unimsg socket: %s\n",
-			strerror(-rc));
-		return 1;
-	}
+	/* Connect to services */
+	for (unsigned i = 0; i < sizeof(dependencies) / sizeof(dependencies[0]);
+	     i++) {
+		unsigned id = dependencies[i];
 
-	if (unimsg_connect(catalog_sock, services[PRODUCTCATALOG_SERVICE].addr,
-			   services[PRODUCTCATALOG_SERVICE].port)) {
-		fprintf(stderr, "Error connecting to product catalog service: "
-			"%s\n", strerror(-rc));
-		ERR_CLOSE(catalog_sock);
-	}
+		rc = unimsg_socket(&socks[id]);
+		if (rc) {
+			fprintf(stderr, "Error creating unimsg socket: %s\n",
+				strerror(-rc));
+			return 1;
+		}
 
-	DEBUG("Connected to product catalog service\n");
+		rc = unimsg_connect(socks[id], services[id].addr,
+				    services[id].port);
+		if (rc) {
+			fprintf(stderr, "Error connecting to %s service: %s\n",
+				services[id].name, strerror(-rc));
+			return 1;
+		}
+
+		DEBUG("Connected to %s service\n", services[id].name);
+	}
 
 	run_service(RECOMMENDATION_SERVICE, handle_request);
 

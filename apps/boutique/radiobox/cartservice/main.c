@@ -9,7 +9,6 @@
 #include <string.h>
 #include <unimsg/net.h>
 #include "../common/service/service.h"
-#include "../common/service/message.h"
 
 #define ERR_CLOSE(s) ({ unimsg_close(s); exit(1); })
 #define ERR_PUT(descs, ndescs, s) ({					\
@@ -143,16 +142,16 @@ static void EmptyCart(EmptyCartRequest *in) {
 static void handle_request(struct unimsg_shm_desc *descs,
 			   unsigned *ndescs __unused)
 {
-	CartRpc *rpc = descs[0].addr;
+	struct rpc *rpc = descs[0].addr;
 
 	switch (rpc->command) {
-	case CART_COMMAND_ADD_ITEM:
+	case CART_ADD_ITEM:
 		AddItem((AddItemRequest *)&rpc->rr);
 		break;
-	case CART_COMMAND_GET_CART:
+	case CART_GET_CART:
 		GetCart((GetCartRR *)&rpc->rr);
 		break;
-	case CART_COMMAND_EMPTY_CART:
+	case CART_EMPTY_CART:
 		EmptyCart((EmptyCartRequest *)&rpc->rr);
 		break;
 	default:
@@ -168,6 +167,6 @@ int main(int argc, char **argv)
 	LocalCartStore = new_c_map(compare_e, NULL, NULL);
 
 	run_service(CART_SERVICE, handle_request);
-	
+
 	return 0;
 }

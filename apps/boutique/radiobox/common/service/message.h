@@ -71,16 +71,11 @@ typedef struct _getCartRR {
 	Cart res;
 } GetCartRR;
 
-enum CartCommand {
-	CART_COMMAND_ADD_ITEM,
-	CART_COMMAND_GET_CART,
-	CART_COMMAND_EMPTY_CART,
+enum cart_command {
+	CART_ADD_ITEM,
+	CART_GET_CART,
+	CART_EMPTY_CART,
 };
-
-typedef struct _cartRpc {
-	enum CartCommand command;
-	char rr[0];
-} CartRpc;
 
 /**
  * // ---------------Recommendation service----------
@@ -175,15 +170,10 @@ typedef struct _currencyConversionRR {
 	Money res;
 } CurrencyConversionRR;
 
-enum CurrencyCommand {
-	CURRENCY_COMMAND_GET_SUPPORTED_CURRENCIES,
-	CURRENCY_COMMAND_CONVERT
+enum currency_command {
+	CURRENCY_GET_SUPPORTED_CURRENCIES,
+	CURRENCY_CONVERT
 };
-
-typedef struct _currencyRpc {
-	enum CurrencyCommand command;
-	char rr[0];
-} CurrencyRpc;
 
 /**
  * // ---------------Product Catalog----------------
@@ -261,16 +251,11 @@ typedef struct _searchProductsRR {
 	SearchProductsResponse res;
 } SearchProductsRR;
 
-enum ProductCatalogCommand {
-	PRODUCT_CATALOG_COMMAND_LIST_PRODUCTS,
-	PRODUCT_CATALOG_COMMAND_GET_PRODUCT,
-	PRODUCT_CATALOG_COMMAND_SEARCH_PRODUCTS,
+enum productcatalog_command {
+	PRODUCTCATALOG_LIST_PRODUCTS,
+	PRODUCTCATALOG_GET_PRODUCT,
+	PRODUCTCATALOG_SEARCH_PRODUCTS,
 };
-
-typedef struct _productCatalogRpc {
-	enum ProductCatalogCommand command;
-	char rr[0];
-} ProductCatalogRpc;
 
 /**
  * // ---------------Shipping Service----------
@@ -345,15 +330,10 @@ typedef struct _shipOrderRR {
 	ShipOrderResponse res;
 } ShipOrderRR;
 
-enum ShippingCommand {
-	SHIPPING_COMMAND_GET_QUOTE,
-	SHIPPING_COMMAND_SHIP_ORDER,
+enum shipping_command {
+	SHIPPING_GET_QUOTE,
+	SHIPPING_SHIP_ORDER,
 };
-
-typedef struct _shippingRpc {
-	enum ShippingCommand command;
-	char rr[0];
-} ShippingRpc;
 
 /**
  * // -------------Payment service-----------------
@@ -531,5 +511,14 @@ typedef struct _adrr {
 	AdRequest req;
 	AdResponse res;
 } AdRR;
+
+struct rpc {
+	/* Unique id used to identify the RPC by the caller */
+	unsigned id;
+	/* Command of the RPC, see enum <service>_command */
+	int command;
+	/* Body of the RPC */
+	char rr[0];
+};
 
 #endif /* __MESSAGE__ */

@@ -2,7 +2,6 @@
  * Some sort of Copyright
  */
 
-#include "../common/service/message.h"
 #include "../common/service/service.h"
 
 #define MAX_ADS_TO_SERVE 1
@@ -105,7 +104,7 @@ static void GetAds(AdRR *rr) {
 	} else {
 		DEBUG("No Context provided. Constructing random Ads.\n");
 		Ad ad = getRandomAds();
-		
+
 		strcpy(rr->res.Ads[0].RedirectUrl, ad.RedirectUrl);
 		strcpy(rr->res.Ads[0].Text, ad.Text);
 		rr->res.num_ads++;
@@ -126,7 +125,8 @@ static void GetAds(AdRR *rr) {
 static void handle_request(struct unimsg_shm_desc *descs,
 			   unsigned *ndescs __unused)
 {
-	AdRR *rr = descs[0].addr;
+	struct rpc *rpc = descs[0].addr;
+	AdRR *rr = (AdRR *)rpc->rr;
 
 	GetAds(rr);
 }
@@ -137,6 +137,6 @@ int main(int argc, char **argv)
 	(void)argv;
 
 	run_service(AD_SERVICE, handle_request);
-	
+
 	return 0;
 }

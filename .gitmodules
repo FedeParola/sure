@@ -22,3 +22,6 @@
 [submodule "libs/lib-musl"]
 	path = libs/lib-musl
 	url = https://github.com/unikraft/lib-musl
+[submodule "apps/boutique/radiobox/apps/boutique/radiobox/common/libaco"]
+	path = apps/boutique/radiobox/apps/boutique/radiobox/common/libaco
+	url = https://github.com/hnes/libaco.git

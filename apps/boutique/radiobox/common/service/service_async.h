@@ -13,7 +13,7 @@
 #include "../libaco/aco.h"
 
 #ifndef ENABLE_DEBUG
-#define ENABLE_DEBUG 1
+#define ENABLE_DEBUG 0
 #endif
 
 #if ENABLE_DEBUG
@@ -21,6 +21,9 @@
 #else
 #define DEBUG(...) (void)0
 #endif
+
+#define DEBUG_SVC(co_id, fmt, ...)					\
+	DEBUG("[service (%d)] " fmt, co_id, ##__VA_ARGS__)
 
 /* Service ids */
 #define AD_SERVICE	       0
@@ -73,19 +76,16 @@ static struct service_desc services[] = {
 #define __unused __attribute__((unused))
 #define MAX_COROUTINES 16
 
-struct coroutine_args {
+struct coroutine {
+	unsigned id;
+	aco_t *handle;
+	aco_share_stack_t *stack;
 	/* Data of upstreaming request */
 	struct unimsg_sock *up_sock;
 	struct unimsg_shm_desc up_descs[UNIMSG_MAX_DESCS_BULK];
 	unsigned up_ndescs;
 	/* Data of downtream request */
 	struct unimsg_shm_desc *down_desc;
-};
-
-struct coroutine {
-	aco_t *handle;
-	aco_share_stack_t *stack;
-	struct coroutine_args args;
 };
 
 typedef void (*handle_request_t)(struct unimsg_shm_desc *descs,
@@ -95,31 +95,44 @@ static struct coroutine coroutines[MAX_COROUTINES];
 static struct unimsg_sock *downstream_socks[NUM_SERVICES];
 static handle_request_t request_handler;
 static aco_t *main_co;
+static unsigned available_cos[MAX_COROUTINES];
+static unsigned n_available_cos;
 
 static void coroutine_fn()
 {
-	struct coroutine_args *args = aco_get_arg();
-	unsigned nsend = args->up_ndescs;
+	struct coroutine *co = aco_get_arg();
 
-	request_handler(args->up_descs, &nsend);
+	while (1) {
+		DEBUG_SVC(co->id, "Handling request\n");
 
-	int rc = unimsg_send(args->up_sock, args->up_descs, nsend, 0);
-	if (rc) {
-		unimsg_buffer_put(args->up_descs, args->up_ndescs > nsend ?
-				  args->up_ndescs : nsend);
+		unsigned nsend = co->up_ndescs;
+
+		request_handler(co->up_descs, &nsend);
+
+		int rc = unimsg_send(co->up_sock, co->up_descs, nsend, 0);
 		if (rc) {
-			fprintf(stderr, "Error sending desc: %s\n",
-				strerror(-rc));
-			_ERR_CLOSE(args->up_sock);
+			unimsg_buffer_put(co->up_descs, co->up_ndescs > nsend ?
+					  co->up_ndescs : nsend);
+			if (rc) {
+				fprintf(stderr, "Error sending desc: %s\n",
+					strerror(-rc));
+				_ERR_CLOSE(co->up_sock);
+			}
 		}
-	}
 
-	DEBUG("[service] Sent response of %d buffers\n", nsend);
+		DEBUG_SVC(co->id, "Sent response of %d buffers\n", nsend);
 
-	/* Free excess buffers */
-	if (nsend < args->up_ndescs) {
-		unimsg_buffer_put(args->up_descs + nsend,
-				  args->up_ndescs - nsend);
+		/* Free excess buffers */
+		if (nsend < co->up_ndescs) {
+			unimsg_buffer_put(co->up_descs + nsend,
+					  co->up_ndescs - nsend);
+		}
+
+		available_cos[n_available_cos++] = co->id;
+
+		DEBUG_SVC(co->id, "Request handled\n");
+
+		aco_yield();
 	}
 
 	aco_exit();
@@ -137,36 +150,39 @@ static void handle_downstream(struct unimsg_sock *s)
 		_ERR_CLOSE(s);
 	}
 
-	DEBUG("[service] Received downstream response\n");
+	DEBUG_SVC(-1, "Received downstream response\n");
 
 	/* Identify the coroutine */
 	struct rpc *rpc = desc.addr;
-	(void)rpc->id;
-	unsigned co_id = 0;
+	if (rpc->id >= MAX_COROUTINES) {
+		fprintf(stderr, "Detected invalid coroutine id\n");
+		exit(1);
+	}
+	struct coroutine *co = &coroutines[rpc->id];
 
 	/* Copy args */
-	*coroutines[co_id].args.down_desc = desc;
+	*co->down_desc = desc;
 
 	/* Resume coroutine */
-	DEBUG("[service] Resuming coroutine\n");
-	aco_resume(coroutines[co_id].handle);
-
-	/* If coroutine ended, destroy it */
-	if (coroutines[co_id].handle->is_end) {
-		DEBUG("[service] Destroying coroutine\n");
-		aco_destroy(coroutines[co_id].handle);
-	}
+	DEBUG_SVC(-1, "Resuming coroutine %u\n", co->id);
+	aco_resume(co->handle);
 }
 
 static int handle_upstream(struct unimsg_sock *s)
 {
-	struct coroutine_args *args = &coroutines[0].args;
-	args->up_sock = s;
-	args->up_ndescs = UNIMSG_MAX_DESCS_BULK;
-	int rc = unimsg_recv(s, args->up_descs, &args->up_ndescs, 0);
+	/* Find available coroutine */
+	if (available_cos == 0) {
+		fprintf(stderr, "No more available coroutines\n");
+		_ERR_CLOSE(s);
+	}
+	struct coroutine *co = &coroutines[available_cos[n_available_cos - 1]];
+	co->up_sock = s;
+	co->up_ndescs = UNIMSG_MAX_DESCS_BULK;
+
+	int rc = unimsg_recv(s, co->up_descs, &co->up_ndescs, 0);
 	if (rc == -ECONNRESET) {
 		unimsg_close(s);
-		DEBUG("[service] Connection closed\n");
+		DEBUG_SVC(-1, "Connection closed\n");
 		return 1;
 	} else if (rc) {
 		fprintf(stderr, "Error receiving from upstream: %s\n",
@@ -174,12 +190,12 @@ static int handle_upstream(struct unimsg_sock *s)
 		_ERR_CLOSE(s);
 	}
 
-	DEBUG("[service] Received request of %d buffers\n", args->up_ndescs);
+	n_available_cos--;
 
-	coroutines[0].handle = aco_create(main_co, coroutines[0].stack, 0,
-					  coroutine_fn, &coroutines[0].args);
+	DEBUG_SVC(-1, "Received request of %d buffers\n", co->up_ndescs);
+	DEBUG_SVC(-1, "Starting coroutine %u\n", co->id);
 
-	aco_resume(coroutines[0].handle);
+	aco_resume(co->handle);
 
 	return 0;
 }
@@ -195,8 +211,17 @@ static void run_service(unsigned id, handle_request_t handler,
 	/* Initialize coroutines */
 	aco_thread_init(NULL);
 	main_co = aco_create(NULL, NULL, 0, NULL, NULL);
-	coroutines[0].stack = aco_share_stack_new(0);
 	request_handler = handler;
+	n_available_cos = 0;
+	for (unsigned i = 0; i < MAX_COROUTINES; i++) {
+		coroutines[i].id = i;
+		coroutines[i].stack = aco_share_stack_new(0);
+		coroutines[i].handle = aco_create(main_co, coroutines[i].stack,
+						  0, coroutine_fn,
+						  &coroutines[i]);
+		available_cos[i] = i;
+	}
+	n_available_cos = MAX_COROUTINES;
 
 	/* Connect to dependencies */
 	for (unsigned i = 0; i < ndependencies; i++) {
@@ -220,7 +245,7 @@ static void run_service(unsigned id, handle_request_t handler,
 		downstream_socks[id] = socks[nsocks];
 		nsocks++;
 
-		DEBUG("Connected to %s service\n", services[id].name);
+		DEBUG_SVC(-1, "Connected to %s service\n", services[id].name);
 	}
 
 	/* Listen for incoming connections */
@@ -241,7 +266,7 @@ static void run_service(unsigned id, handle_request_t handler,
 		fprintf(stderr, "Error listening: %s\n", strerror(-rc));
 		_ERR_CLOSE(socks[0]);
 	}
-	DEBUG("[service] Waiting for incoming connections...\n");
+	DEBUG_SVC(-1, "Waiting for incoming connections...\n");
 
 	while (1) {
 		rc = unimsg_poll(socks, nsocks, ready);
@@ -286,7 +311,7 @@ static void run_service(unsigned id, handle_request_t handler,
 
 			socks[nsocks++] = s;
 
-			DEBUG("[service] New client connected\n");
+			DEBUG_SVC(-1, "New client connected\n");
 		}
 	}
 }
@@ -295,19 +320,22 @@ __unused
 static void do_rpc(struct unimsg_shm_desc *desc, unsigned service,
 		   size_t rr_size)
 {
+	struct rpc *rpc = desc->addr;
+	struct coroutine *co = aco_get_arg();
+	rpc->id = co->id;
+
 	int rc = unimsg_send(downstream_socks[service], desc, 1, 0);
 	if (rc) {
 		fprintf(stderr, "Error sending desc: %s\n", strerror(-rc));
 		exit(1);
 	}
 
-	DEBUG("[service] Sent request to %s service, yielding\n",
-	      services[service].name);
-	struct coroutine_args *args = aco_get_arg();
-	args->down_desc = desc;
+	DEBUG_SVC(co->id, "Sent request to %s service, yielding\n",
+		  services[service].name);
+	co->down_desc = desc;
 	aco_yield();
-	DEBUG("[service] Resumed on response from %s service\n",
-	      services[service].name);
+	DEBUG_SVC(co->id, "Resumed on response from %s service\n",
+		  services[service].name);
 
 	if (desc->size != sizeof(struct rpc) + rr_size) {
 		fprintf(stderr, "Received reply of unexpected size\n");

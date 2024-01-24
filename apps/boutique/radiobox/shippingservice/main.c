@@ -142,10 +142,10 @@ static void handle_request(struct unimsg_shm_desc *descs,
 
 	switch (rpc->command) {
 	case SHIPPING_GET_QUOTE:
-		GetQuote((GetQuoteRR *)&rpc->rr);
+		GetQuote((GetQuoteRR *)rpc->rr);
 		break;
 	case SHIPPING_SHIP_ORDER:
-		ShipOrder((ShipOrderRR *)&rpc->rr);
+		ShipOrder((ShipOrderRR *)rpc->rr);
 		break;
 	default:
 		fprintf(stderr, "Received unknown command\n");

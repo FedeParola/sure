@@ -207,13 +207,13 @@ static void handle_request(struct unimsg_shm_desc *descs,
 
 	switch (rpc->command) {
 	case PRODUCTCATALOG_LIST_PRODUCTS:
-		ListProducts((ListProductsResponse *)&rpc->rr);
+		ListProducts((ListProductsResponse *)rpc->rr);
 		break;
 	case PRODUCTCATALOG_GET_PRODUCT:
-		GetProduct((GetProductRR *)&rpc->rr);
+		GetProduct((GetProductRR *)rpc->rr);
 		break;
 	case PRODUCTCATALOG_SEARCH_PRODUCTS:
-		SearchProducts((SearchProductsRR *)&rpc->rr);
+		SearchProducts((SearchProductsRR *)rpc->rr);
 		break;
 	default:
 		fprintf(stderr, "Received unknown command\n");

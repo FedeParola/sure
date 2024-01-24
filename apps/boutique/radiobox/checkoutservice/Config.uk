@@ -3,3 +3,4 @@ config APPCHECKOUTSERVICE_DEPENDENCIES
 	bool
 	default y
 	select LIBUNIMSG
+	select LIBMUSL

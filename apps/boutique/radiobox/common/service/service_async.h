@@ -80,7 +80,7 @@ struct coroutine {
 	unsigned id;
 	aco_t *handle;
 	aco_share_stack_t *stack;
-	/* Data of upstreaming request */
+	/* Data of upstream request */
 	struct unimsg_sock *up_sock;
 	struct unimsg_shm_desc up_descs[UNIMSG_MAX_DESCS_BULK];
 	unsigned up_ndescs;
@@ -161,7 +161,7 @@ static void handle_downstream(struct unimsg_sock *s)
 	struct coroutine *co = &coroutines[rpc->id];
 
 	/* Copy args */
-	*co->down_desc = desc;
+	*(co->down_desc) = desc;
 
 	/* Resume coroutine */
 	DEBUG_SVC(-1, "Resuming coroutine %u\n", co->id);
@@ -177,7 +177,7 @@ static int handle_upstream(struct unimsg_sock *s)
 	}
 	struct coroutine *co = &coroutines[available_cos[n_available_cos - 1]];
 	co->up_sock = s;
-	co->up_ndescs = UNIMSG_MAX_DESCS_BULK;
+	co->up_ndescs = 1;
 
 	int rc = unimsg_recv(s, co->up_descs, &co->up_ndescs, 0);
 	if (rc == -ECONNRESET) {

@@ -113,10 +113,10 @@ static void handle_request(struct unimsg_shm_desc *descs,
 	switch (rpc->command) {
 	case CURRENCY_GET_SUPPORTED_CURRENCIES:
 		GetSupportedCurrencies(
-			(GetSupportedCurrenciesResponse *)&rpc->rr);
+			(GetSupportedCurrenciesResponse *)rpc->rr);
 		break;
 	case CURRENCY_CONVERT:
-		Convert((CurrencyConversionRR *)&rpc->rr);
+		Convert((CurrencyConversionRR *)rpc->rr);
 		break;
 	default:
 		fprintf(stderr, "Received unknown command\n");

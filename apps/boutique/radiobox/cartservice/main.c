@@ -146,13 +146,13 @@ static void handle_request(struct unimsg_shm_desc *descs,
 
 	switch (rpc->command) {
 	case CART_ADD_ITEM:
-		AddItem((AddItemRequest *)&rpc->rr);
+		AddItem((AddItemRequest *)rpc->rr);
 		break;
 	case CART_GET_CART:
-		GetCart((GetCartRR *)&rpc->rr);
+		GetCart((GetCartRR *)rpc->rr);
 		break;
 	case CART_EMPTY_CART:
-		EmptyCart((EmptyCartRequest *)&rpc->rr);
+		EmptyCart((EmptyCartRequest *)rpc->rr);
 		break;
 	default:
 		fprintf(stderr, "Received unknown command\n");

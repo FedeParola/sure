@@ -198,9 +198,9 @@ getRecommendations(struct unimsg_shm_desc *desc, char *user_id,
 	return &((ListRecommendationsRR *)rpc->rr)->res;
 }
 
-static void productHandler(struct unimsg_shm_desc *desc, char *arg)
+static void productHandler(struct unimsg_shm_desc *desc, char *id)
 {
-	Product p = getProduct(desc, arg);
+	Product p = getProduct(desc, id);
 
 	/* Discard result */
 	getCurrencies(desc);
@@ -547,7 +547,10 @@ static void handle_request(struct unimsg_shm_desc *descs,
 		}
 	} else if (!strncmp(url, "/product/", sizeof("/product/") - 1)) {
 		if (!strcmp(method, "GET")) {
-			productHandler(desc, url + sizeof("/product/") - 1);
+			char id[20];
+			strncpy(id, url + sizeof("/product/") - 1,
+				sizeof(id) - 1);
+			productHandler(desc, id);
 			handled = 1;
 		}
 	} else if (!strcmp(url, "/cart")) {

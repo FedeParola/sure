@@ -4,7 +4,7 @@
  */
 
 // #include <math.h>
-#include "../common/service/service.h"
+#include "../common/service/service_async.h"
 
 #define ERR_CLOSE(s) ({ unimsg_close(s); exit(1); })
 #define ERR_PUT(descs, ndescs, s) ({					\
@@ -195,30 +195,8 @@ int main(int argc, char **argv)
 	(void)argc;
 	(void)argv;
 
-	/* Connect to services */
-	for (unsigned i = 0; i < sizeof(dependencies) / sizeof(dependencies[0]);
-	     i++) {
-		unsigned id = dependencies[i];
-
-		rc = unimsg_socket(&socks[id]);
-		if (rc) {
-			fprintf(stderr, "Error creating unimsg socket: %s\n",
-				strerror(-rc));
-			return 1;
-		}
-
-		rc = unimsg_connect(socks[id], services[id].addr,
-				    services[id].port);
-		if (rc) {
-			fprintf(stderr, "Error connecting to %s service: %s\n",
-				services[id].name, strerror(-rc));
-			return 1;
-		}
-
-		DEBUG("Connected to %s service\n", services[id].name);
-	}
-
-	run_service(RECOMMENDATION_SERVICE, handle_request);
+	run_service(RECOMMENDATION_SERVICE, handle_request, dependencies,
+		    sizeof(dependencies) / sizeof(dependencies[0]);
 
 	return 0;
 }

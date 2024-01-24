@@ -3,7 +3,7 @@
  * Copyright (c) 2022 University of California, Riverside
  */
 
-#include "../common/service/service.h"
+#include "../common/service/service_async.h"
 #include "../common/service/utilities.h"
 
 #define DEFAULT_UUID "1b4e28ba-2fa1-11d2-883f-0016d3cca427"
@@ -269,29 +269,8 @@ int main(int argc, char **argv)
 	(void)argc;
 	(void)argv;
 
-	/* Connect to services */
-	for (unsigned i = 0; i < sizeof(dependencies) / sizeof(dependencies[0]);
-	     i++) {
-		unsigned id = dependencies[i];
-
-		rc = unimsg_socket(&socks[id]);
-		if (rc) {
-			fprintf(stderr, "Error creating unimsg socket: %s\n",
-				strerror(-rc));
-			return 1;
-		}
-
-		if (unimsg_connect(socks[id], services[id].addr,
-				   services[id].port)) {
-			fprintf(stderr, "Error connecting to %s service: %s\n",
-				services[id].name, strerror(-rc));
-			ERR_CLOSE(socks[id]);
-		}
-
-		DEBUG("Connected to %s service\n", services[id].name);
-	}
-
-	run_service(CHECKOUT_SERVICE, handle_request);
+	run_service(CHECKOUT_SERVICE, handle_request, dependencies,
+		    sizeof(dependencies) / sizeof(dependencies[0]));
 
 	return 0;
 }

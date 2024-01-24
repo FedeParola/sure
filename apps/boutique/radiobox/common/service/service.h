@@ -77,7 +77,7 @@ typedef void (*handle_request_t)(struct unimsg_shm_desc *descs,
 static int handle_socket(struct unimsg_sock *s, handle_request_t handle_request)
 {
 	struct unimsg_shm_desc descs[UNIMSG_MAX_DESCS_BULK];
-	unsigned nrecv = UNIMSG_MAX_DESCS_BULK;
+	unsigned nrecv = 1;
 
 	int rc = unimsg_recv(s, descs, &nrecv, 0);
 	if (rc == -ECONNRESET) {

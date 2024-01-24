@@ -5,7 +5,7 @@
 
 #include <c_lib.h>
 #include <math.h>
-#include "../common/service/service.h"
+#include "../common/service/service_sync.h"
 
 #define ERR_CLOSE(s) ({ unimsg_close(s); exit(1); })
 #define ERR_PUT(descs, ndescs, s) ({					\

@@ -4,7 +4,7 @@
  */
 
 #include <math.h>
-#include "../common/service/service.h"
+#include "../common/service/service_sync.h"
 
 #define DEFAULT_UUID "1b4e28ba-2fa1-11d2-883f-0016d3cca427"
 #define ERR_CLOSE(s) ({ unimsg_close(s); exit(1); })

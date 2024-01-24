@@ -264,8 +264,6 @@ static void handle_request(struct unimsg_shm_desc *descs,
 
 int main(int argc, char **argv)
 {
-	int rc;
-
 	(void)argc;
 	(void)argv;
 

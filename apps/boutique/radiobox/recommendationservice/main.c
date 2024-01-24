@@ -190,13 +190,11 @@ static void handle_request(struct unimsg_shm_desc *descs,
 
 int main(int argc, char **argv)
 {
-	int rc;
-
 	(void)argc;
 	(void)argv;
 
 	run_service(RECOMMENDATION_SERVICE, handle_request, dependencies,
-		    sizeof(dependencies) / sizeof(dependencies[0]);
+		    sizeof(dependencies) / sizeof(dependencies[0]));
 
 	return 0;
 }

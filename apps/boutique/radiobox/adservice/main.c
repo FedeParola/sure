@@ -2,7 +2,7 @@
  * Some sort of Copyright
  */
 
-#include "../common/service/service.h"
+#include "../common/service/service_sync.h"
 
 #define MAX_ADS_TO_SERVE 1
 

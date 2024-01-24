@@ -145,7 +145,9 @@ static void do_rpc(struct unimsg_shm_desc *desc, unsigned service,
 	}
 
 	if (desc->size != sizeof(struct rpc) + rr_size) {
-		fprintf(stderr, "Received reply of unexpected size\n");
+		fprintf(stderr, "Expected %lu B, got %u B from %s service\n",
+			sizeof(struct rpc) + rr_size, desc->size,
+			services[service].name);
 		exit(1);
 	}
 }

@@ -15,6 +15,7 @@ eval $(dirname $0)/../../../../../qemu/build/qemu-system-x86_64 \
 	-kernel "$(dirname $0)/build/checkoutservice_qemu-x86_64" \
 	-enable-kvm \
 	-cpu host \
+	-m 256M \
 	-device ivshmem-doorbell,vectors=1,chardev=id \
 	-chardev socket,path=/tmp/ivshmem_socket,id=id \
 	-object memory-backend-file,size=1G,share=true,mem-path=/dev/hugepages/unimsg_buffers,id=buffers_mem \

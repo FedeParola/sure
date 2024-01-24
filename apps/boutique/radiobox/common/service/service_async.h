@@ -15,7 +15,7 @@
 #define DEBUG_SVC(...) (void)0
 #endif
 
-#define MAX_COROUTINES 16
+#define MAX_COROUTINES 32
 
 struct coroutine {
 	unsigned id;
@@ -276,7 +276,9 @@ static void do_rpc(struct unimsg_shm_desc *desc, unsigned service,
 		  services[service].name);
 
 	if (desc->size != sizeof(struct rpc) + rr_size) {
-		fprintf(stderr, "Received reply of unexpected size\n");
+		fprintf(stderr, "Expected %lu B, got %u B from %s service\n",
+			sizeof(struct rpc) + rr_size, desc->size,
+			services[service].name);
 		exit(1);
 	}
 }

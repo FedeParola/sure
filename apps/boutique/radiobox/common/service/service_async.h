@@ -35,6 +35,7 @@ static handle_request_t request_handler;
 static aco_t *main_co;
 static unsigned available_cos[MAX_COROUTINES];
 static unsigned n_available_cos;
+static int disable_upstream;
 
 static void coroutine_fn()
 {
@@ -66,6 +67,11 @@ static void coroutine_fn()
 					  co->up_ndescs - nsend);
 		}
 
+		if (n_available_cos == 0) {
+			DEBUG_SVC(co->id , "Enabling upstream reception on "
+				  "coroutine termination\n");
+			disable_upstream = 0;
+		}
 		available_cos[n_available_cos++] = co->id;
 
 		DEBUG_SVC(co->id, "Request handled\n");
@@ -109,9 +115,11 @@ static void handle_downstream(struct unimsg_sock *s)
 static int handle_upstream(struct unimsg_sock *s)
 {
 	/* Find available coroutine */
-	if (available_cos == 0) {
-		fprintf(stderr, "No more available coroutines\n");
-		_ERR_CLOSE(s);
+	if (n_available_cos == 0) {
+		DEBUG_SVC(-1 , "Disabling upstream reception for lack of "
+			  "coroutines\n");
+		disable_upstream = 1;
+		return 2;
 	}
 	struct coroutine *co = &coroutines[available_cos[n_available_cos - 1]];
 	co->up_sock = s;
@@ -206,8 +214,11 @@ static void run_service(unsigned id, handle_request_t handler,
 	}
 	DEBUG_SVC(-1, "Waiting for incoming connections...\n");
 
+	disable_upstream = 0;
+
 	while (1) {
-		rc = unimsg_poll(socks, nsocks, ready);
+		unsigned npoll = disable_upstream ? ndependencies + 1 : nsocks;
+		rc = unimsg_poll(socks, npoll, ready);
 		if (rc) {
 			fprintf(stderr, "Error polling: %s\n", strerror(-rc));
 			exit(1);
@@ -220,25 +231,42 @@ static void run_service(unsigned id, handle_request_t handler,
 				handle_downstream(socks[i]);
 		}
 
-		/* Handle upstream sockets */
-		for (; i < nsocks; i++) {
+		/* Handle upstream sockets, if enabled */
+		for (; i < npoll; i++) {
 			if (ready[i]) {
 				rc = handle_upstream(socks[i]);
-				if (rc) {
+				if (rc == 1) {
 					/* The socket was closed, remove it from
 					 * the list and shift all other sockets
 					 */
 					nsocks--;
+					npoll--;
 					for (unsigned j = i; j < nsocks; j++) {
 						socks[j] = socks[j + 1];
 						ready[j] = ready[j + 1];
 					}
+
+				} else if (rc == 2) {
+					/* We cannot receive more due to lack of
+					 * coroutines
+					 */
+					/* TODO: to be fair, start receiveing
+					 * from the next socket on the next
+					 * round
+					 */
+					break;
 				}
 			}
 		}
 
 		/* Handle new connections */
 		if (ready[0]) {
+			if (nsocks == UNIMSG_MAX_NSOCKS) {
+				fprintf(stderr, "Reached max number of "
+					"connections\n");
+				exit(1);
+			}
+
 			struct unimsg_sock *s;
 			rc = unimsg_accept(socks[0], &s, 1);
 			if (rc) {

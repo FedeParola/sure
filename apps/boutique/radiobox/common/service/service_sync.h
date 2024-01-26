@@ -110,6 +110,12 @@ static void run_service(unsigned id, handle_request_t handle_request)
 		}
 
 		if (ready[0]) {
+			if (nsocks == UNIMSG_MAX_NSOCKS) {
+				fprintf(stderr, "Reached max number of "
+					"connections\n");
+				exit(1);
+			}
+
 			struct unimsg_sock *s;
 			rc = unimsg_accept(socks[0], &s, 1);
 			if (rc) {

@@ -18,17 +18,14 @@
 })
 
 #define HTTP_OK "HTTP/1.1 200 OK\r\n"					\
-		"Connection: close\r\n"					\
 		"Content-Length: 0\r\n"					\
 		"\r\n"
 
 #define HTTP_BAD_REQUEST "HTTP/1.1 400 Bad Request\r\n"			\
-			 "Connection: close\r\n"			\
 			 "Content-Length: 0\r\n"			\
 			 "\r\n"
 
 #define HTTP_NOT_FOUND "HTTP/1.1 404 Not Found\r\n"			\
-		       "Connection: close\r\n"				\
 		       "Content-Length: 0\r\n"				\
 		       "\r\n"
 

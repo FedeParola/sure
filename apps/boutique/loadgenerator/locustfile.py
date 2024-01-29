@@ -15,7 +15,11 @@
 # limitations under the License.
 
 import random
-from locust import FastHttpUser, TaskSet, between
+import time
+from locust import FastHttpUser, TaskSet, runners, events
+
+# Monkey patch stats report interval
+runners.WORKER_REPORT_INTERVAL = 1
 
 products = [
     '0PUK6V6EV0',
@@ -58,7 +62,7 @@ def checkout(l):
         'city': 'Mountain View',
         'state': 'CA',
         'country': 'United States',
-        'credit_card_number': '4432-8015-6152-0454',
+        'credit_card_number': '4432801561520454',
         'credit_card_expiration_month': '1',
         'credit_card_expiration_year': '2039',
         'credit_card_cvv': '672',
@@ -78,3 +82,18 @@ class UserBehavior(TaskSet):
 
 class WebsiteUser(FastHttpUser):
     tasks = [UserBehavior]
+
+@events.request.add_listener
+def hook_request(request_type, name, response_time, response_length, response,
+                 context, exception, **kw):
+    stats_file.write(str(time.time()) + ";" + request_type + ";" + name + ";" + str(response_time) + "\n")
+
+@events.quitting.add_listener
+def hook_quitting(environment, **kw):
+    stats_file.close()
+
+@events.init.add_listener
+def hook_init(environment, **kw):
+    global stats_file
+    if isinstance(environment.runner, runners.WorkerRunner):
+        stats_file = open(f'resp_time_{environment.runner.worker_index}.csv', 'w')

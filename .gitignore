@@ -4,3 +4,4 @@ build/
 .config.old
 *.csv
 *.log
+__pycache__

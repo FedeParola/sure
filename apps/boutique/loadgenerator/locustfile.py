@@ -33,25 +33,30 @@ products = [
     'OLJCESPC7Z']
 
 def index(l):
-    l.client.get("/")
+    l.client.get("/", headers={"host": "kn-frontend.default.example.com"})
 
 def setCurrency(l):
     currencies = ['EUR', 'USD', 'JPY', 'CAD']
     l.client.post("/setCurrency",
-        {'currency_code': random.choice(currencies)})
+        {'currency_code': random.choice(currencies)},
+        headers={"host": "kn-frontend.default.example.com"})
 
 def browseProduct(l):
-    l.client.get("/product/" + random.choice(products))
+    l.client.get("/product/" + random.choice(products),
+        headers={"host": "kn-frontend.default.example.com"})
 
 def viewCart(l):
-    l.client.get("/cart")
+    l.client.get("/cart",
+        headers={"host": "kn-frontend.default.example.com"})
 
 def addToCart(l):
     product = random.choice(products)
-    l.client.get("/product/" + product)
+    l.client.get("/product/" + product,
+        headers={"host": "kn-frontend.default.example.com"})
     l.client.post("/cart", {
         'product_id': product,
-        'quantity': random.choice([1,2,3,4,5,10])})
+        'quantity': random.choice([1,2,3,4,5,10])},
+        headers={"host": "kn-frontend.default.example.com"})
 
 def checkout(l):
     addToCart(l)
@@ -65,8 +70,8 @@ def checkout(l):
         'credit_card_number': '4432801561520454',
         'credit_card_expiration_month': '1',
         'credit_card_expiration_year': '2039',
-        'credit_card_cvv': '672',
-    })
+        'credit_card_cvv': '672',},
+        headers={"host": "kn-frontend.default.example.com"})
 
 class UserBehavior(TaskSet):
 
@@ -90,7 +95,8 @@ def hook_request(request_type, name, response_time, response_length, response,
 
 @events.quitting.add_listener
 def hook_quitting(environment, **kw):
-    stats_file.close()
+    if isinstance(environment.runner, runners.WorkerRunner):
+        stats_file.close()
 
 @events.init.add_listener
 def hook_init(environment, **kw):

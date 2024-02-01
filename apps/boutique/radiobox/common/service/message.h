@@ -71,12 +71,6 @@ typedef struct _getCartRR {
 	Cart res;
 } GetCartRR;
 
-enum cart_command {
-	CART_ADD_ITEM,
-	CART_GET_CART,
-	CART_EMPTY_CART,
-};
-
 /**
  * // ---------------Recommendation service----------
  *
@@ -170,11 +164,6 @@ typedef struct _currencyConversionRR {
 	Money res;
 } CurrencyConversionRR;
 
-enum currency_command {
-	CURRENCY_GET_SUPPORTED_CURRENCIES,
-	CURRENCY_CONVERT
-};
-
 /**
  * // ---------------Product Catalog----------------
  *
@@ -251,12 +240,6 @@ typedef struct _searchProductsRR {
 	SearchProductsResponse res;
 } SearchProductsRR;
 
-enum productcatalog_command {
-	PRODUCTCATALOG_LIST_PRODUCTS,
-	PRODUCTCATALOG_GET_PRODUCT,
-	PRODUCTCATALOG_SEARCH_PRODUCTS,
-};
-
 /**
  * // ---------------Shipping Service----------
  *
@@ -329,11 +312,6 @@ typedef struct _shipOrderRR {
 	ShipOrderRequest req;
 	ShipOrderResponse res;
 } ShipOrderRR;
-
-enum shipping_command {
-	SHIPPING_GET_QUOTE,
-	SHIPPING_SHIP_ORDER,
-};
 
 /**
  * // -------------Payment service-----------------
@@ -512,11 +490,29 @@ typedef struct _adrr {
 	AdResponse res;
 } AdRR;
 
+enum command {
+	CART_ADD_ITEM,
+	CART_GET_CART,
+	CART_EMPTY_CART,
+	RECOMMENDATION_LIST_RECOMMENDATIONS,
+	CURRENCY_GET_SUPPORTED_CURRENCIES,
+	CURRENCY_CONVERT,
+	PRODUCTCATALOG_LIST_PRODUCTS,
+	PRODUCTCATALOG_GET_PRODUCT,
+	PRODUCTCATALOG_SEARCH_PRODUCTS,
+	SHIPPING_GET_QUOTE,
+	SHIPPING_SHIP_ORDER,
+	PAYMENT_CHARGE,
+	EMAIL_SEND_ORDER_CONFIRMATION,
+	CHECKOUT_PLACE_ORDER,
+	AD_GET_ADS
+};
+
 struct rpc {
 	/* Unique id used to identify the RPC by the caller */
 	unsigned id;
-	/* Command of the RPC, see enum <service>_command */
-	int command;
+	/* Command of the RPC, see enum command */
+	enum command command;
 	/* Body of the RPC */
 	char rr[0];
 };

@@ -105,10 +105,9 @@ static void Convert(CurrencyConversionRR *rr)
 	return;
 }
 
-static void handle_request(struct unimsg_shm_desc *descs,
-			   unsigned *ndescs __unused)
+static void handle_request(struct unimsg_shm_desc *desc)
 {
-	struct rpc *rpc = descs[0].addr;
+	struct rpc *rpc = desc->addr;
 
 	switch (rpc->command) {
 	case CURRENCY_GET_SUPPORTED_CURRENCIES:

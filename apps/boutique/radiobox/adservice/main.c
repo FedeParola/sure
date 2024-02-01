@@ -122,10 +122,9 @@ static void GetAds(AdRR *rr) {
 	DEBUG("[GetAds] completed request\n");
 }
 
-static void handle_request(struct unimsg_shm_desc *descs,
-			   unsigned *ndescs __unused)
+static void handle_request(struct unimsg_shm_desc *desc)
 {
-	struct rpc *rpc = descs[0].addr;
+	struct rpc *rpc = desc->addr;
 	AdRR *rr = (AdRR *)rpc->rr;
 
 	GetAds(rr);

@@ -115,10 +115,9 @@ static void Charge(ChargeRR *rr) {
 	return;
 }
 
-static void handle_request(struct unimsg_shm_desc *descs,
-			   unsigned *ndescs __unused)
+static void handle_request(struct unimsg_shm_desc *desc)
 {
-	struct rpc *rpc = descs[0].addr;
+	struct rpc *rpc = desc->addr;
 	ChargeRR *rr = (ChargeRR *)rpc->rr;
 
 	Charge(rr);

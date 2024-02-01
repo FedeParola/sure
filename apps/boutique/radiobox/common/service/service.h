@@ -71,7 +71,154 @@ static struct service_desc services[] = {
 #define _ERR_CLOSE(s) ({ unimsg_close(s); exit(1); })
 #define __unused __attribute__((unused))
 
-typedef void (*handle_request_t)(struct unimsg_shm_desc *descs,
-				 unsigned *ndescs);
+typedef void (*handle_request_t)(struct unimsg_shm_desc *desc);
+
+static size_t get_rpc_size(enum command command)
+{
+	ssize_t size;
+
+	switch (command) {
+	case CART_ADD_ITEM:
+		size = sizeof(AddItemRequest);
+		break;
+	case CART_GET_CART:
+		size = sizeof(GetCartRR);
+		break;
+	case CART_EMPTY_CART:
+		size = sizeof(EmptyCartRequest);
+		break;
+	case RECOMMENDATION_LIST_RECOMMENDATIONS:
+		size = sizeof(ListRecommendationsRR);
+		break;
+	case CURRENCY_GET_SUPPORTED_CURRENCIES:
+		size = sizeof(GetSupportedCurrenciesResponse);
+		break;
+	case CURRENCY_CONVERT:
+		size = sizeof(CurrencyConversionRR);
+		break;
+	case PRODUCTCATALOG_LIST_PRODUCTS:
+		size = sizeof(ListProductsResponse);
+		break;
+	case PRODUCTCATALOG_GET_PRODUCT:
+		size = sizeof(GetProductRR);
+		break;
+	case PRODUCTCATALOG_SEARCH_PRODUCTS:
+		size = sizeof(SearchProductsRR);
+		break;
+	case SHIPPING_GET_QUOTE:
+		size = sizeof(GetQuoteRR);
+		break;
+	case SHIPPING_SHIP_ORDER:
+		size = sizeof(ShipOrderRR);
+		break;
+	case PAYMENT_CHARGE:
+		size = sizeof(ChargeRR);
+		break;
+	case EMAIL_SEND_ORDER_CONFIRMATION:
+		size = sizeof(SendOrderConfirmationRR);
+		break;
+	case CHECKOUT_PLACE_ORDER:
+		size = sizeof(PlaceOrderRR);
+		break;
+	case AD_GET_ADS:
+		size = sizeof(AdRR);
+		break;
+	default:
+		fprintf(stderr, "Unknown gRPC command %d\n", command);
+		exit(1);
+	}
+
+	return size + sizeof(struct rpc);
+}
+
+struct pending_buffer {
+	struct unimsg_shm_desc desc;
+	unsigned expected_sz;
+};
+
+static void move_data(struct unimsg_shm_desc *dst, struct unimsg_shm_desc *src,
+		      unsigned size)
+{
+	memcpy(dst->addr, src->addr, size);
+	dst->size += size;
+	src->addr += size;
+	src->off += size;
+	src->size -= size;
+}
+
+static int process_desc(struct pending_buffer *pending,
+			struct unimsg_shm_desc *desc)
+{
+	int rc;
+
+	if (!pending->desc.addr) {
+		/* There's nothing pending */
+
+		if (desc->size < sizeof(struct rpc)) {
+			pending->desc = *desc;
+			desc->size = 0;
+			return 0;
+		}
+
+		struct rpc *rpc = desc->addr;
+		pending->expected_sz = get_rpc_size(rpc->command);
+
+		if (desc->size == pending->expected_sz) {
+			pending->desc = *desc;
+			desc->size = 0;
+			return 1;
+
+		} else if (desc->size < pending->expected_sz) {
+			if (UNIMSG_BUFFER_SIZE - 68 - pending->desc.off >=
+			    pending->expected_sz) {
+				/* The buffer can hold the full message */
+				pending->desc = *desc;
+				desc->size = 0;
+			} else {
+				/* The buffer can't hold the full message */
+				rc = unimsg_buffer_get(&pending->desc, 1);
+				if (rc) {
+					fprintf(stderr, "Error getting shm "
+						"buffer: %s\n", strerror(-rc));
+					exit(1);
+				}
+				move_data(&pending->desc, desc, desc->size);
+			}
+
+			return 0;
+
+		} else { /* desc->size > pending->expected_sz */
+			rc = unimsg_buffer_get(&pending->desc, 1);
+			if (rc) {
+				fprintf(stderr, "Error getting shm buffer: "
+					"%s\n", strerror(-rc));
+				exit(1);
+			}
+			move_data(&pending->desc, desc, pending->expected_sz);
+
+			return 1;
+		}
+
+	} else {
+		/* There's something pending */
+		unsigned needed = pending->expected_sz ?
+				  pending->expected_sz - pending->desc.size :
+				  sizeof(struct rpc) - pending->desc.size;
+
+		unsigned to_copy = MIN(needed, desc->size);
+		move_data(&pending->desc, desc, to_copy);
+
+		if (!pending->expected_sz
+		    && pending->desc.size > sizeof(struct rpc)) {
+			struct rpc *rpc = pending->desc.addr;
+			pending->expected_sz = get_rpc_size(rpc->command);
+		}
+
+		if (desc->size == 0)
+			unimsg_buffer_put(desc, 1);
+
+		return pending->desc.size == pending->expected_sz ? 1 : 0;
+	}
+}
 
 #endif /* __SERVICE__ */

@@ -23,8 +23,7 @@ struct coroutine {
 	aco_share_stack_t *stack;
 	/* Data of upstream request */
 	struct unimsg_sock *up_sock;
-	struct unimsg_shm_desc up_descs[UNIMSG_MAX_DESCS_BULK];
-	unsigned up_ndescs;
+	struct unimsg_shm_desc up_desc;
 	/* Data of downtream request */
 	struct unimsg_shm_desc *down_desc;
 };
@@ -44,14 +43,11 @@ static void coroutine_fn()
 	while (1) {
 		DEBUG_SVC(co->id, "Handling request\n");
 
-		unsigned nsend = co->up_ndescs;
+		request_handler(&co->up_desc);
 
-		request_handler(co->up_descs, &nsend);
-
-		int rc = unimsg_send(co->up_sock, co->up_descs, nsend, 0);
+		int rc = unimsg_send(co->up_sock, &co->up_desc, 1, 0);
 		if (rc) {
-			unimsg_buffer_put(co->up_descs, co->up_ndescs > nsend ?
-					  co->up_ndescs : nsend);
+			unimsg_buffer_put(&co->up_desc, 1);
 			if (rc) {
 				fprintf(stderr, "Error sending desc: %s\n",
 					strerror(-rc));
@@ -59,13 +55,7 @@ static void coroutine_fn()
 			}
 		}
 
-		DEBUG_SVC(co->id, "Sent response of %d buffers\n", nsend);
-
-		/* Free excess buffers */
-		if (nsend < co->up_ndescs) {
-			unimsg_buffer_put(co->up_descs + nsend,
-					  co->up_ndescs - nsend);
-		}
+		DEBUG_SVC(co->id, "Sent response\n");
 
 		if (n_available_cos == 0) {
 			DEBUG_SVC(co->id , "Enabling upstream reception on "
@@ -82,37 +72,64 @@ static void coroutine_fn()
 	aco_exit();
 }
 
-static void handle_downstream(struct unimsg_sock *s)
+static void handle_downstream(struct unimsg_sock *s,
+			      struct pending_buffer *pending)
 {
-	struct unimsg_shm_desc desc;
-	unsigned ndescs = 1;
+	struct unimsg_shm_desc descs[UNIMSG_MAX_DESCS_BULK];
+	unsigned ndescs = UNIMSG_MAX_DESCS_BULK;
 
-	int rc = unimsg_recv(s, &desc, &ndescs, 0);
+	int rc = unimsg_recv(s, descs, &ndescs, 0);
 	if (rc) {
 		fprintf(stderr, "Error receiving from downstream: %s\n",
 			strerror(-rc));
 		_ERR_CLOSE(s);
 	}
 
-	DEBUG_SVC(-1, "Received downstream response\n");
+	DEBUG_SVC(-1, "Received %u descs from downstream\n", ndescs);
 
-	/* Identify the coroutine */
-	struct rpc *rpc = desc.addr;
-	if (rpc->id >= MAX_COROUTINES) {
-		fprintf(stderr, "Detected invalid coroutine id\n");
-		exit(1);
+	unsigned current = 0;
+	while (current < ndescs) {
+		if (process_desc(pending, &descs[current])) {
+			DEBUG_SVC(-1, "Received downstream response\n");
+
+			/* Identify the coroutine */
+			struct rpc *rpc = pending->desc.addr;
+			if (rpc->id >= MAX_COROUTINES) {
+				fprintf(stderr, "Detected invalid coroutine "
+					"id\n");
+				exit(1);
+			}
+			struct coroutine *co = &coroutines[rpc->id];
+
+			/* Copy args */
+			*(co->down_desc) = pending->desc;
+
+			/* Clear pending */
+			pending->desc.addr = 0;
+			pending->desc.size = 0;
+			pending->expected_sz = 0;
+
+			/* Resume coroutine */
+			DEBUG_SVC(-1, "Resuming coroutine %u\n", co->id);
+			aco_resume(co->handle);
+		}
+
+		if (descs[current].size == 0)
+			current++;
 	}
-	struct coroutine *co = &coroutines[rpc->id];
 
-	/* Copy args */
-	*(co->down_desc) = desc;
-
-	/* Resume coroutine */
-	DEBUG_SVC(-1, "Resuming coroutine %u\n", co->id);
-	aco_resume(co->handle);
+	DEBUG_SVC(-1, "Done processing bulk\n");
 }
 
-static int handle_upstream(struct unimsg_sock *s)
+#if UPSTREAM_HTTP
+#define handle_upstream handle_upstream_http
+#else
+#define handle_upstream handle_upstream_grpc
+#endif
+
+__unused
+static int handle_upstream_http(struct unimsg_sock *s,
+				struct pending_buffer *pending __unused)
 {
 	/* Find available coroutine */
 	if (n_available_cos == 0) {
@@ -123,9 +140,9 @@ static int handle_upstream(struct unimsg_sock *s)
 	}
 	struct coroutine *co = &coroutines[available_cos[n_available_cos - 1]];
 	co->up_sock = s;
-	co->up_ndescs = 1;
 
-	int rc = unimsg_recv(s, co->up_descs, &co->up_ndescs, 0);
+	unsigned ndescs = 1;
+	int rc = unimsg_recv(s, &co->up_desc, &ndescs, 0);
 	if (rc == -ECONNRESET) {
 		unimsg_close(s);
 		DEBUG_SVC(-1, "Connection closed\n");
@@ -138,10 +155,84 @@ static int handle_upstream(struct unimsg_sock *s)
 
 	n_available_cos--;
 
-	DEBUG_SVC(-1, "Received request of %d buffers\n", co->up_ndescs);
+	DEBUG_SVC(-1, "Received request\n");
 	DEBUG_SVC(-1, "Starting coroutine %u\n", co->id);
 
 	aco_resume(co->handle);
+
+	return 0;
+}
+
+__unused
+static int handle_upstream_grpc(struct unimsg_sock *s,
+				struct pending_buffer *pending)
+{
+	/* Check available coroutine */
+	if (n_available_cos == 0) {
+		DEBUG_SVC(-1 , "Disabling upstream reception for lack of "
+			  "coroutines\n");
+		disable_upstream = 1;
+		return 2;
+	}
+
+	struct unimsg_shm_desc descs[UNIMSG_MAX_DESCS_BULK];
+	unsigned ndescs = UNIMSG_MAX_DESCS_BULK;
+	int rc = unimsg_recv(s, descs, &ndescs, 0);
+	if (rc == -ECONNRESET) {
+		unimsg_close(s);
+		DEBUG_SVC(-1, "Connection closed\n");
+		return 1;
+	} else if (rc) {
+		fprintf(stderr, "Error receiving from upstream: %s\n",
+			strerror(-rc));
+		_ERR_CLOSE(s);
+	}
+
+	DEBUG_SVC(-1, "Received %u descs from upstream\n", ndescs);
+
+	unsigned current = 0;
+	while (current < ndescs) {
+		/* Check available coroutine */
+		if (n_available_cos == 0) {
+			fprintf(stderr, "No more available coroutines but data "
+				"is already pending");
+			exit(1);
+		}
+
+		if (process_desc(pending, &descs[current])) {
+			struct coroutine *co =
+				&coroutines[available_cos[n_available_cos - 1]];
+			n_available_cos--;
+
+			co->up_desc = pending->desc;
+			co->up_sock = s;
+
+			/* Clear pending */
+			pending->desc.addr = 0;
+			pending->desc.size = 0;
+			pending->expected_sz = 0;
+
+			/* Validate message */
+			struct rpc *rpc = co->up_desc.addr;
+			if (co->up_desc.size != get_rpc_size(rpc->command)) {
+				fprintf(stderr, "Expected %lu B, got %u B from "
+					"upstream\n",
+					get_rpc_size(rpc->command),
+					co->up_desc.size);
+				exit(1);
+			}
+
+			DEBUG_SVC(-1, "Received request\n");
+			DEBUG_SVC(-1, "Starting coroutine %u\n", co->id);
+
+			aco_resume(co->handle);
+		}
+
+		if (descs[current].size == 0)
+			current++;
+	}
+
+	DEBUG_SVC(-1, "Done processing bulk\n");
 
 	return 0;
 }
@@ -151,6 +242,7 @@ static void run_service(unsigned id, handle_request_t handler,
 {
 	int rc;
 	struct unimsg_sock *socks[UNIMSG_MAX_NSOCKS];
+	struct pending_buffer pending_buffers[UNIMSG_MAX_NSOCKS];
 	int ready[UNIMSG_MAX_NSOCKS];
 	unsigned nsocks = 1;
 
@@ -216,6 +308,8 @@ static void run_service(unsigned id, handle_request_t handler,
 
 	disable_upstream = 0;
 
+	memset(pending_buffers, 0, sizeof(pending_buffers));
+
 	while (1) {
 		unsigned npoll = disable_upstream ? ndependencies + 1 : nsocks;
 		rc = unimsg_poll(socks, npoll, ready);
@@ -227,14 +321,17 @@ static void run_service(unsigned id, handle_request_t handler,
 		unsigned i;
 		/* Handle downstream sockets */
 		for (i = 1; i <= ndependencies; i++) {
-			if (ready[i])
-				handle_downstream(socks[i]);
+			if (ready[i]) {
+				handle_downstream(socks[i],
+						  &pending_buffers[i]);
+			}
 		}
 
 		/* Handle upstream sockets, if enabled */
 		for (; i < npoll; i++) {
 			if (ready[i]) {
-				rc = handle_upstream(socks[i]);
+				rc = handle_upstream(socks[i],
+						     &pending_buffers[i]);
 				if (rc == 1) {
 					/* The socket was closed, remove it from
 					 * the list and shift all other sockets
@@ -283,8 +380,7 @@ static void run_service(unsigned id, handle_request_t handler,
 }
 
 __unused
-static void do_rpc(struct unimsg_shm_desc *desc, unsigned service,
-		   size_t rr_size)
+static void do_rpc(struct unimsg_shm_desc *desc, unsigned service)
 {
 	struct rpc *rpc = desc->addr;
 	struct coroutine *co = aco_get_arg();
@@ -303,9 +399,10 @@ static void do_rpc(struct unimsg_shm_desc *desc, unsigned service,
 	DEBUG_SVC(co->id, "Resumed on response from %s service\n",
 		  services[service].name);
 
-	if (desc->size != sizeof(struct rpc) + rr_size) {
+	rpc = desc->addr;
+	if (desc->size != get_rpc_size(rpc->command)) {
 		fprintf(stderr, "Expected %lu B, got %u B from %s service\n",
-			sizeof(struct rpc) + rr_size, desc->size,
+			get_rpc_size(rpc->command), desc->size,
 			services[service].name);
 		exit(1);
 	}

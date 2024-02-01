@@ -152,9 +152,9 @@ static void ListRecommendations(ListRecommendationsRR *rr)
 
 	struct rpc *rpc = desc.addr;
 	rpc->command = PRODUCTCATALOG_LIST_PRODUCTS;
-	desc.size = sizeof(*rpc) + sizeof(ListProductsResponse);
+	desc.size = get_rpc_size(PRODUCTCATALOG_LIST_PRODUCTS);
 
-	do_rpc(&desc, PRODUCTCATALOG_SERVICE, sizeof(ListProductsResponse));
+	do_rpc(&desc, PRODUCTCATALOG_SERVICE);
 
 	rpc = desc.addr;
 	ListProductsResponse *list_products_response =
@@ -179,10 +179,9 @@ static void ListRecommendations(ListRecommendationsRR *rr)
 	return;
 }
 
-static void handle_request(struct unimsg_shm_desc *descs,
-			   unsigned *ndescs __unused)
+static void handle_request(struct unimsg_shm_desc *desc)
 {
-	struct rpc *rpc = descs[0].addr;
+	struct rpc *rpc = desc->addr;
 	ListRecommendationsRR *rr = (ListRecommendationsRR *)rpc->rr;
 
 	ListRecommendations(rr);

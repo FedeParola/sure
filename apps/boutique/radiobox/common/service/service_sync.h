@@ -14,12 +14,13 @@
 #define DEBUG_SVC(...) (void)0
 #endif
 
-static int handle_socket(struct unimsg_sock *s, handle_request_t handle_request)
+static int handle_socket(struct unimsg_sock *s, handle_request_t handle_request,
+			 struct pending_buffer *pending)
 {
 	struct unimsg_shm_desc descs[UNIMSG_MAX_DESCS_BULK];
-	unsigned nrecv = 1;
+	unsigned ndescs = UNIMSG_MAX_DESCS_BULK;
 
-	int rc = unimsg_recv(s, descs, &nrecv, 0);
+	int rc = unimsg_recv(s, descs, &ndescs, 0);
 	if (rc == -ECONNRESET) {
 		unimsg_close(s);
 		DEBUG_SVC("Connection closed\n");
@@ -29,30 +30,52 @@ static int handle_socket(struct unimsg_sock *s, handle_request_t handle_request)
 		_ERR_CLOSE(s);
 	}
 
-	DEBUG_SVC("Received request of %d buffers\n", nrecv);
+	DEBUG_SVC("Received %u descs from upstream\n", ndescs);
 
-	unsigned nsend = nrecv;
-	handle_request(descs, &nsend);
+	unsigned current = 0;
+	while (current < ndescs) {
+		if (process_desc(pending, &descs[current])) {
+			/* Validate message */
+			struct rpc *rpc = pending->desc.addr;
+			if (pending->desc.size != get_rpc_size(rpc->command)) {
+				fprintf(stderr, "Expected %lu B, got %u B from "
+					"upstream\n",
+					get_rpc_size(rpc->command),
+					pending->desc.size);
+				exit(1);
+			}
 
-	rc = unimsg_send(s, descs, nsend, 0);
-	if (rc) {
-		unimsg_buffer_put(descs, nrecv > nsend ? nrecv : nsend);
-		if (rc == -ECONNRESET) {
-			unimsg_close(s);
-			DEBUG_SVC("Connection closed\n");
-			return 1;
-		} else if (rc) {
-			fprintf(stderr, "Error sending desc: %s\n",
-				strerror(-rc));
-			_ERR_CLOSE(s);
+			DEBUG_SVC("Received request\n");
+
+			handle_request(&pending->desc);
+
+			rc = unimsg_send(s, &pending->desc, 1, 0);
+			if (rc) {
+				unimsg_buffer_put(descs, ndescs);
+				if (rc == -ECONNRESET) {
+					unimsg_close(s);
+					DEBUG_SVC("Connection closed\n");
+					return 1;
+				} else if (rc) {
+					fprintf(stderr, "Error sending desc: "
+						"%s\n", strerror(-rc));
+					_ERR_CLOSE(s);
+				}
+			}
+
+			DEBUG_SVC("Sent response\n");
+
+			/* Clear pending */
+			pending->desc.addr = 0;
+			pending->desc.size = 0;
+			pending->expected_sz = 0;
 		}
+
+		if (descs[current].size == 0)
+			current++;
 	}
 
-	DEBUG_SVC("Sent response of %d buffers\n", nsend);
-
-	/* Free excess buffers */
-	if (nsend < nrecv)
-		unimsg_buffer_put(descs + nsend, nrecv - nsend);
+	DEBUG_SVC("Done processing bulk\n");
 
 	return 0;
 }
@@ -61,6 +84,7 @@ static void run_service(unsigned id, handle_request_t handle_request)
 {
 	int rc;
 	struct unimsg_sock *socks[UNIMSG_MAX_NSOCKS];
+	struct pending_buffer pending_buffers[UNIMSG_MAX_NSOCKS];
 	int ready[UNIMSG_MAX_NSOCKS];
 	unsigned nsocks = 1;
 
@@ -84,6 +108,8 @@ static void run_service(unsigned id, handle_request_t handle_request)
 		_ERR_CLOSE(socks[0]);
 	}
 
+	memset(pending_buffers, 0, sizeof(pending_buffers));
+
 	DEBUG_SVC("Waiting for incoming connections...\n");
 
 	while (1) {
@@ -95,7 +121,8 @@ static void run_service(unsigned id, handle_request_t handle_request)
 
 		for (unsigned i = 1; i < nsocks; i++) {
 			if (ready[i]) {
-				rc = handle_socket(socks[i], handle_request);
+				rc = handle_socket(socks[i], handle_request,
+						   &pending_buffers[i]);
 				if (rc) {
 					/* The socket was closed, remove it from
 					 * the list and shift all other sockets
@@ -134,8 +161,7 @@ static void run_service(unsigned id, handle_request_t handle_request)
 static struct unimsg_sock *socks[NUM_SERVICES];
 
 __unused
-static void do_rpc(struct unimsg_shm_desc *desc, unsigned service,
-		   size_t rr_size)
+static void do_rpc(struct unimsg_shm_desc *desc, unsigned service)
 {
 	int rc = unimsg_send(socks[service], desc, 1, 0);
 	if (rc) {
@@ -150,9 +176,10 @@ static void do_rpc(struct unimsg_shm_desc *desc, unsigned service,
 		exit(1);
 	}
 
-	if (desc->size != sizeof(struct rpc) + rr_size) {
+	struct rpc *rpc = desc->addr;
+	if (desc->size != get_rpc_size(rpc->command)) {
 		fprintf(stderr, "Expected %lu B, got %u B from %s service\n",
-			sizeof(struct rpc) + rr_size, desc->size,
+			get_rpc_size(rpc->command), desc->size,
 			services[service].name);
 		exit(1);
 	}

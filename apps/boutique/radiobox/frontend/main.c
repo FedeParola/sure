@@ -3,6 +3,8 @@
  * Copyright (c) 2022 University of California, Riverside
  */
 
+#define UPSTREAM_HTTP 1
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -49,9 +51,9 @@ getCurrencies(struct unimsg_shm_desc *desc)
 
 	struct rpc *rpc = desc->addr;
 	rpc->command = CURRENCY_GET_SUPPORTED_CURRENCIES;
-	desc->size = sizeof(*rpc) + sizeof(GetSupportedCurrenciesResponse);
+	desc->size = get_rpc_size(CURRENCY_GET_SUPPORTED_CURRENCIES);
 
-	do_rpc(desc, CURRENCY_SERVICE, sizeof(GetSupportedCurrenciesResponse));
+	do_rpc(desc, CURRENCY_SERVICE);
 
 	DEBUG("/getCurrencies()\n");
 
@@ -63,9 +65,9 @@ static ListProductsResponse *getProducts(struct unimsg_shm_desc *desc)
 {
 	struct rpc *rpc = desc->addr;
 	rpc->command = PRODUCTCATALOG_LIST_PRODUCTS;
-	desc->size = sizeof(*rpc) + sizeof(ListProductsResponse);
+	desc->size = get_rpc_size(PRODUCTCATALOG_LIST_PRODUCTS);
 
-	do_rpc(desc, PRODUCTCATALOG_SERVICE, sizeof(ListProductsResponse));
+	do_rpc(desc, PRODUCTCATALOG_SERVICE);
 
 	rpc = desc->addr;
 	return (ListProductsResponse *)rpc->rr;
@@ -75,11 +77,11 @@ static Cart *getCart(struct unimsg_shm_desc *desc, char *user_id)
 {
 	struct rpc *rpc = desc->addr;
 	rpc->command = CART_GET_CART;
-	desc->size = sizeof(*rpc) + sizeof(GetCartRR);
+	desc->size = get_rpc_size(CART_GET_CART);
 	GetCartRR *get_cart_rr = (GetCartRR *)rpc->rr;
 	strcpy(get_cart_rr->req.UserId, user_id);
 
-	do_rpc(desc, CART_SERVICE, sizeof(GetCartRR));
+	do_rpc(desc, CART_SERVICE);
 
 	return &((GetCartRR *)((struct rpc *)desc->addr)->rr)->res;
 }
@@ -89,7 +91,7 @@ static Money convertCurrency(struct unimsg_shm_desc *desc, Money price_usd,
 {
 	struct rpc *rpc = desc->addr;
 	rpc->command = CURRENCY_CONVERT;
-	desc->size = sizeof(*rpc) + sizeof(CurrencyConversionRR);
+	desc->size = get_rpc_size(CURRENCY_CONVERT);
 	CurrencyConversionRR *conv_rr = (CurrencyConversionRR *)rpc->rr;
 	conv_rr->req.From = price_usd;
 	strcpy(conv_rr->req.ToCode, user_currency);
@@ -97,7 +99,7 @@ static Money convertCurrency(struct unimsg_shm_desc *desc, Money price_usd,
 	DEBUG("Requesting currency conversion from '%s' to '%s'\n",
 	      price_usd.CurrencyCode, user_currency);
 
-	do_rpc(desc, CURRENCY_SERVICE, sizeof(CurrencyConversionRR));
+	do_rpc(desc, CURRENCY_SERVICE);
 
 	return ((CurrencyConversionRR *)((struct rpc *)desc->addr)->rr)->res;
 }
@@ -106,13 +108,14 @@ static AdResponse *getAd(struct unimsg_shm_desc *desc, char *ctx_keys[],
 			 unsigned num_ctx_keys)
 {
 	struct rpc *rpc = desc->addr;
-	desc->size = sizeof(*rpc) + sizeof(AdRR);
+	rpc->command = AD_GET_ADS;
+	desc->size = get_rpc_size(AD_GET_ADS);
 	AdRR *rr = (AdRR *)rpc->rr;
 	for (unsigned i = 0; i < num_ctx_keys; i++)
 		strcpy(rr->req.ContextKeys[i], ctx_keys[i]);
 	rr->req.num_context_keys = num_ctx_keys;
 
-	do_rpc(desc, AD_SERVICE, sizeof(AdRR));
+	do_rpc(desc, AD_SERVICE);
 
 	rr = (AdRR *)((struct rpc *)desc->addr)->rr;
 	return &rr->res;
@@ -164,11 +167,11 @@ static Product getProduct(struct unimsg_shm_desc *desc, char *product_id)
 {
 	struct rpc *rpc = desc->addr;
 	rpc->command = PRODUCTCATALOG_GET_PRODUCT;
-	desc->size = sizeof(*rpc) + sizeof(GetProductRR);
+	desc->size = get_rpc_size(PRODUCTCATALOG_GET_PRODUCT);
 	GetProductRR *rr = (GetProductRR *)rpc->rr;
 	strcpy(rr->req.Id, product_id);
 
-	do_rpc(desc, PRODUCTCATALOG_SERVICE, sizeof(GetProductRR));
+	do_rpc(desc, PRODUCTCATALOG_SERVICE);
 
 	return ((GetProductRR *)(((struct rpc *)desc->addr)->rr))->res;
 }
@@ -180,14 +183,15 @@ getRecommendations(struct unimsg_shm_desc *desc, char *user_id,
 	DEBUG("getRecommendations()\n");
 
 	struct rpc *rpc = desc->addr;
-	desc->size = sizeof(*rpc) + sizeof(ListRecommendationsRR);
+	rpc->command =  RECOMMENDATION_LIST_RECOMMENDATIONS;
+	desc->size = get_rpc_size(RECOMMENDATION_LIST_RECOMMENDATIONS);
 	ListRecommendationsRR *rr = (ListRecommendationsRR *)rpc->rr;
 	strcpy(rr->req.user_id, user_id);
 	for (unsigned i = 0; i < num_product_ids; i++)
 		strcpy(rr->req.product_ids[i], product_ids[i]);
 	rr->req.num_product_ids = num_product_ids;
 
-	do_rpc(desc, RECOMMENDATION_SERVICE, sizeof(ListRecommendationsRR));
+	do_rpc(desc, RECOMMENDATION_SERVICE);
 
 	DEBUG("/getRecommendations()\n");
 
@@ -224,7 +228,7 @@ static Money getShippingQuote(struct unimsg_shm_desc *desc,
 			      char *currency)
 {
 	struct rpc *rpc = desc->addr;
-	desc->size = sizeof(*rpc) + sizeof(GetQuoteRR);
+	desc->size = get_rpc_size(SHIPPING_GET_QUOTE);
 	rpc->command = SHIPPING_GET_QUOTE;
 	GetQuoteRR *rr = (GetQuoteRR *)rpc->rr;
 
@@ -233,7 +237,7 @@ static Money getShippingQuote(struct unimsg_shm_desc *desc,
 		rr->req.Items[i] = items[i];
 	rr->req.num_items = num_items;
 
-	do_rpc(desc, SHIPPING_SERVICE, sizeof(GetQuoteRR));
+	do_rpc(desc, SHIPPING_SERVICE);
 
 	rpc = desc->addr;
 	rr = (GetQuoteRR *)rpc->rr;
@@ -276,7 +280,7 @@ static void insertCart(struct unimsg_shm_desc *desc, char *user_id,
 		       char *product_id, int quantity)
 {
 	struct rpc *rpc = desc->addr;
-	desc->size = sizeof(*rpc) + sizeof(AddItemRequest);
+	desc->size = get_rpc_size(CART_ADD_ITEM);
 	rpc->command = CART_ADD_ITEM;
 	AddItemRequest *req = (AddItemRequest *)rpc->rr;
 
@@ -284,7 +288,7 @@ static void insertCart(struct unimsg_shm_desc *desc, char *user_id,
 	req->Item.Quantity = quantity;
 	strcpy(req->UserId, user_id);
 
-	do_rpc(desc, CART_SERVICE, sizeof(AddItemRequest));
+	do_rpc(desc, CART_SERVICE);
 }
 
 static void addToCartHandler(struct unimsg_shm_desc *desc, char *body)
@@ -313,13 +317,13 @@ static void addToCartHandler(struct unimsg_shm_desc *desc, char *body)
 static void emptyCart(struct unimsg_shm_desc *desc, char *user_id)
 {
 	struct rpc *rpc = desc->addr;
-	desc->size = sizeof(*rpc) + sizeof(EmptyCartRequest);
+	desc->size = get_rpc_size(CART_EMPTY_CART);
 	rpc->command = CART_EMPTY_CART;
 	EmptyCartRequest *req = (EmptyCartRequest *)rpc->rr;
 
 	strcpy(req->UserId, user_id);
 
-	do_rpc(desc, CART_SERVICE, sizeof(EmptyCartRequest));
+	do_rpc(desc, CART_SERVICE);
 }
 
 static void emptyCartHandler(struct unimsg_shm_desc *desc)
@@ -418,7 +422,8 @@ static void placeOrderHandler(struct unimsg_shm_desc *desc, char *body __unused)
 	      credit_card_expiration_year, credit_card_cvv);
 
 	struct rpc *rpc = desc->addr;
-	desc->size = sizeof(*rpc) + sizeof(PlaceOrderRR);
+	rpc->command =  CHECKOUT_PLACE_ORDER;
+	desc->size = get_rpc_size(CHECKOUT_PLACE_ORDER);
 	PlaceOrderRR *rr = (PlaceOrderRR *)rpc->rr;
 
 	strcpy(rr->req.UserId, USER_ID);
@@ -437,7 +442,7 @@ static void placeOrderHandler(struct unimsg_shm_desc *desc, char *body __unused)
 		= credit_card_expiration_year;
 	rr->req.CreditCard.CreditCardCvv = credit_card_cvv;
 
-	do_rpc(desc, CHECKOUT_SERVICE, sizeof(PlaceOrderRR));
+	do_rpc(desc, CHECKOUT_SERVICE);
 
 	rpc = desc->addr;
 	rr = (PlaceOrderRR *)rpc->rr;
@@ -507,22 +512,9 @@ static int parse_http_request(struct unimsg_shm_desc *desc, char **method,
 	return 0;
 }
 
-static void handle_request(struct unimsg_shm_desc *descs,
-			   unsigned *ndescs __unused)
+static void handle_request(struct unimsg_shm_desc *desc)
 {
 	char *method, *url, *body;
-	struct unimsg_shm_desc *desc = &descs[0];
-
-	/* Merge all the buffers in the first one in case of a request spread
-	 * across multiple buffers
-	 */
-	for (unsigned i = 1; i < *ndescs; i++) {
-		/* TODO: check we don't exceed the buffer size */
-		memcpy(descs[0].addr + descs[0].size, descs[i].addr,
-		       descs[i].size);
-		descs[0].size += descs[i].size;
-	}
-	*ndescs = 1;
 
 	if (parse_http_request(desc, &method, &url, &body)) {
 		DEBUG("Error parsing request\n");

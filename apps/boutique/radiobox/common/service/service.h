@@ -139,7 +139,7 @@ struct pending_buffer {
 static void move_data(struct unimsg_shm_desc *dst, struct unimsg_shm_desc *src,
 		      unsigned size)
 {
-	memcpy(dst->addr, src->addr, size);
+	memcpy(dst->addr + dst->size, src->addr, size);
 	dst->size += size;
 	src->addr += size;
 	src->off += size;
@@ -169,7 +169,7 @@ static int process_desc(struct pending_buffer *pending,
 			return 1;
 
 		} else if (desc->size < pending->expected_sz) {
-			if (UNIMSG_BUFFER_SIZE - 68 - pending->desc.off >=
+			if (UNIMSG_BUFFER_SIZE - 68 - desc->off >=
 			    pending->expected_sz) {
 				/* The buffer can hold the full message */
 				pending->desc = *desc;
@@ -182,6 +182,7 @@ static int process_desc(struct pending_buffer *pending,
 						"buffer: %s\n", strerror(-rc));
 					exit(1);
 				}
+				pending->desc.size = 0;
 				move_data(&pending->desc, desc, desc->size);
 			}
 
@@ -194,6 +195,7 @@ static int process_desc(struct pending_buffer *pending,
 					"%s\n", strerror(-rc));
 				exit(1);
 			}
+			pending->desc.size = 0;
 			move_data(&pending->desc, desc, pending->expected_sz);
 
 			return 1;

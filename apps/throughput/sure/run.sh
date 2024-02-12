@@ -8,7 +8,7 @@ fi
 id=$1
 shift
 
-eval $(dirname $0)/../../../../qemu/build/qemu-system-x86_64 \
+eval qemu-system-x86_64 \
 	-nographic \
 	-vga none \
 	-net none \

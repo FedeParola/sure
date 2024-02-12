@@ -1,4 +1,4 @@
-# SURE
+# SURE: Secure Unikernels Make Serverless Computing Rapid and Efficient
 
 ## Building and running
 
@@ -8,7 +8,7 @@ All code blocks suppose to be executed from a common working directory.
 
 Install pre-requirements:
 ```bash
-sudo apt install -y python3-pip meson libglib2.0-dev libssl-dev libnuma-dev libncurses-dev flex bison
+sudo apt install -y python3-pip meson libglib2.0-dev libssl-dev libnuma-dev libncurses-dev flex bison libibverbs-dev
 
 pip3 install pyelftools
 ```
@@ -20,7 +20,7 @@ cd sure
 git submodule update --init --recursive
 ```
 
-Patch and build QEMU:
+Patch, build and install QEMU:
 ```bash
 git clone https://github.com/qemu/qemu.git
 cd qemu
@@ -30,6 +30,7 @@ mkdir build
 cd build
 ../configure --target-list=x86_64-softmmu
 make -j
+sudo make install
 ```
 
 Build and install Z-stack:
@@ -46,7 +47,7 @@ make -j
 sudo make install
 ```
 
-Bind a network interface to DPDK driver:
+Bind a network interface to DPDK driver (**not needed for Mellanox NICs**):
 ```bash
 sudo modprobe uio
 sudo insmod f-stack/dpdk/build/kernel/linux/igb_uio/igb_uio.ko
@@ -75,7 +76,9 @@ make -j
 
 Allocate 1G hugepages:
 ```bash
-echo 16 > sudo tee /sys/kernel/mm/hugepages/hugepages-1048576kB/nr_hugepages
+echo 16 | sudo tee /sys/kernel/mm/hugepages/hugepages-1048576kB/nr_hugepages
+sudo umount /dev/hugepages
+sudo mount -t hugetlbfs -o pagesize=1G none /dev/hugepages
 ```
 
 Allocate shared memory buffers file:
@@ -86,13 +89,13 @@ sudo truncate -s 1G /dev/hugepages/unimsg_buffers
 Run the manager:
 ```bash
 cd unimsg/manager
-sudo unimsg_manager
+sudo ./unimsg_manager
 ```
 
 Run the gateway:
 ```bash
 cd unimsg/gateway
-sudo unimsg_gateway
+sudo ./unimsg_gateway
 ```
 
 Run the SURE VM (e.g., rr-latency app).
@@ -106,7 +109,7 @@ sudo ./run.sh <id> <args>
 ## Tuning the nodes
 
 To prevent CPU C-states and P-states form affecting measurements, the following tuning can be applied.
-Following instructions were tested on a CloudLab `c220g5` node, but should apply to all recent Intel CPUs.
+Following instructions were tested on a CloudLab `sm110p` node, but should apply to all recent Intel CPUs.
 
 ### Disable P-states (frequency scaling)
 Edit `/etc/default/grub` and append `intel_pstate=passive` to the `GRUB_CMDLINE_LINUX` option, then apply and reboot the machine:

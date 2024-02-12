@@ -6,10 +6,10 @@ import time
 
 curdir = os.path.dirname(__file__)
 
-TARGETS		  = ['radiobox', 'radiobox-buf-reuse', 'localhost',
+TARGETS		  = ['sure', 'sure-buf-reuse', 'localhost',
 		     'localhost-sidecar', 'bridge', 'unix', 'skmsg', 'unikraft',
 		     'unikraft-ovs', 'osv', 'osv-ovs']
-TARGET		  = 'radiobox'
+TARGET		  = 'sure'
 OSV_PATH	  = '/users/fparola/src/osv'
 RUNS		  = 10
 RR_ITERATIONS	  = 1000000
@@ -19,8 +19,8 @@ SIZES		  = [64, 4096, 8192]
 TESTS_GAP	  = 5 # Seconds of gap between two tests
 SAR_SECS	  = 5 # Must guarantee that the test won't end before sar
 SERVER_COMMANDS = {
-	'radiobox': ['sudo', './radiobox/run.sh', '1'],
-	'radiobox-buf-reuse': ['sudo', './radiobox/run.sh', '1', '-r'],
+	'sure': ['sudo', './sure/run.sh', '1'],
+	'sure-buf-reuse': ['sudo', './sure/run.sh', '1', '-r'],
 	'localhost': ['./process/build/rr-latency', '-l'],
 	'bridge': ['sudo', 'ip', 'netns', 'exec', 'ns1',
 		   './process/build/rr-latency'],
@@ -32,8 +32,8 @@ SERVER_COMMANDS = {
 	'osv-ovs': ['sudo', OSV_PATH + '/modules/rr-latency/run_server_ovs.sh'],
 }
 CLIENT_COMMANDS = {
-	'radiobox': ['sudo', './radiobox/run.sh', '2'],
-	'radiobox-buf-reuse': ['sudo', './radiobox/run.sh', '2', '-r'],
+	'sure': ['sudo', './sure/run.sh', '2'],
+	'sure-buf-reuse': ['sudo', './sure/run.sh', '2', '-r'],
 	'localhost': ['./process/build/rr-latency', '-l'],
 	'bridge': ['sudo', 'ip', 'netns', 'exec', 'ns2',
 		   './process/build/rr-latency'],

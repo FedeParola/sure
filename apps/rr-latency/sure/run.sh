@@ -12,7 +12,7 @@ eval $(dirname $0)/../../../../qemu/build/qemu-system-x86_64 \
 	-nographic \
 	-vga none \
 	-net none \
-	-kernel "$(dirname $0)/build/radiobox_qemu-x86_64" \
+	-kernel "$(dirname $0)/build/sure_qemu-x86_64" \
 	-enable-kvm \
 	-cpu host \
 	-device ivshmem-doorbell,vectors=1,chardev=id \

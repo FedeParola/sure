@@ -6,10 +6,10 @@ import time
 
 curdir = os.path.dirname(__file__)
 
-TARGETS		  = ['radiobox', 'radiobox-buf-reuse', 'localhost', 'bridge',
+TARGETS		  = ['sure', 'sure-buf-reuse', 'localhost', 'bridge',
 		     'unix', 'skmsg', 'unikraft', 'unikraft-ovs', 'osv',
 		     'osv-ovs']
-TARGET		  = 'radiobox'
+TARGET		  = 'sure'
 OSV_PATH	  = '/users/fparola/src/osv'
 RUNS		  = 10
 CONCURRENCIES	  = [1, 2, 4, 8, 16, 32, 64]
@@ -19,8 +19,8 @@ MSG_SIZE	  = 64
 TESTS_GAP	  = 5 # Seconds of gap between two tests
 SAR_SECS	  = 5 # Must guarantee that the test won't end before sar
 SERVER_COMMANDS = {
-	'radiobox': ['sudo', './radiobox/run.sh', '1'],
-	'radiobox-buf-reuse': ['sudo', './radiobox/run.sh', '1', '-r'],
+	'sure': ['sudo', './sure/run.sh', '1'],
+	'sure-buf-reuse': ['sudo', './sure/run.sh', '1', '-r'],
 	'localhost': ['./process/build/throughput', '-l'],
 	'bridge': ['sudo', 'ip', 'netns', 'exec', 'ns1',
 		   './process/build/throughput'],
@@ -33,8 +33,8 @@ SERVER_COMMANDS = {
 		    '1'],
 }
 CLIENT1_COMMANDS = {
-	'radiobox': ['sudo', './radiobox/run.sh', '2'],
-	'radiobox-buf-reuse': ['sudo', './radiobox/run.sh', '2', '-r'],
+	'sure': ['sudo', './sure/run.sh', '2'],
+	'sure-buf-reuse': ['sudo', './sure/run.sh', '2', '-r'],
 	'localhost': ['./process/build/throughput', '-l'],
 	'bridge': ['sudo', 'ip', 'netns', 'exec', 'ns2',
 		   './process/build/throughput'],
@@ -47,8 +47,8 @@ CLIENT1_COMMANDS = {
 		    '2'],
 }
 CLIENT2_COMMANDS = {
-	'radiobox': ['sudo', './radiobox/run.sh', '3'],
-	'radiobox-buf-reuse': ['sudo', './radiobox/run.sh', '3', '-r'],
+	'sure': ['sudo', './sure/run.sh', '3'],
+	'sure-buf-reuse': ['sudo', './sure/run.sh', '3', '-r'],
 	'localhost': ['./process/build/throughput', '-l'],
 	'bridge': ['sudo', 'ip', 'netns', 'exec', 'ns3',
 		   './process/build/throughput'],
@@ -57,7 +57,7 @@ CLIENT2_COMMANDS = {
 	'unikraft': ['sudo', './unikraft/run.sh', '3'],
 	'unikraft-ovs': ['sudo', './unikraft/run_ovs.sh', '3'],
 	'osv': ['sudo', OSV_PATH + '/modules/throughput/run.sh', '3'],
-	'osv-ovs': ['sudo', OSV_PATH + '/modules/throughput/run_ovs.sh', 
+	'osv-ovs': ['sudo', OSV_PATH + '/modules/throughput/run_ovs.sh',
 		    '3'],
 }
 

@@ -6,10 +6,10 @@ import time
 
 curdir = os.path.dirname(__file__)
 
-TARGETS		  = ['radiobox', 'radiobox-buf-reuse', 'localhost', 'bridge',
+TARGETS		  = ['sure', 'sure-buf-reuse', 'localhost', 'bridge',
 		     'unix', 'skmsg', 'unikraft', 'unikraft-ovs', 'osv',
 		     'osv-ovs']
-TARGET		  = 'radiobox'
+TARGET		  = 'sure'
 RUNS		  = 10
 RR_ITERATIONS	  = 1000000
 WARMUP_ITERATIONS = 1000
@@ -18,12 +18,12 @@ SIZES		  = [256, 4096, 8192]
 TESTS_GAP	  = 5 # Seconds of gap between two tests
 SAR_SECS	  = 5 # Must guarantee that the test won't end before sar
 SERVER_COMMANDS = {
-	'radiobox': ['sudo', './radiobox/run.sh', '1', '-h'],
+	'sure': ['sudo', './sure/run.sh', '1', '-h'],
 	'localhost': ['./process/build/rr-latency', '-l', '-h'],
 	'localhost-sidecar': ['./process/build/throughput', '-l', '-h'],
 }
 CLIENT_COMMANDS = {
-	'radiobox': ['sudo', './radiobox/run.sh', '2'],
+	'sure': ['sudo', './sure/run.sh', '2'],
 	'localhost': ['./process/build/rr-latency', '-l', '-h'],
 	'localhost-sidecar': ['./process/build/rr-latency', '-l', '-h',
 			      '-p', '80'],

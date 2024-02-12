@@ -1,10 +1,10 @@
-# RadioBox
+# SURE
 
 ## Building and running
 
 All code blocks suppose to be executed from a common working directory.
 
-### Building RadioBox apps
+### Building SURE apps
 
 Install pre-requirements:
 ```bash
@@ -13,10 +13,10 @@ sudo apt install -y python3-pip meson libglib2.0-dev libssl-dev libnuma-dev libn
 pip3 install pyelftools
 ```
 
-Clone RadioBox repo:
+Clone SURE repo:
 ```bash
-git clone https://github.com/FedeParola/radiobox.git
-cd radiobox
+git clone https://github.com/FedeParola/sure.git
+cd sure
 git submodule update --init --recursive
 ```
 
@@ -25,7 +25,7 @@ Patch and build QEMU:
 git clone https://github.com/qemu/qemu.git
 cd qemu
 git checkout v8.2.0
-git apply ../radiobox/ivshmem_patch.diff
+git apply ../sure/ivshmem_patch.diff
 mkdir build
 cd build
 ../configure --target-list=x86_64-softmmu
@@ -63,15 +63,15 @@ cd ../gateway
 make
 ```
 
-Build the RadioBox application (e.g., rr-latency):
+Build the SURE application (e.g., rr-latency):
 ```bash
-cd radiobox/apps/rr-latency/radiobox
+cd sure/apps/rr-latency/sure
 make menuconfig
 # Configure the application
 make -j
 ```
 
-### Running RadioBox apps
+### Running SURE apps
 
 Allocate 1G hugepages:
 ```bash
@@ -95,11 +95,11 @@ cd unimsg/gateway
 sudo unimsg_gateway
 ```
 
-Run the RadioBox VM (e.g., rr-latency app).
+Run the SURE VM (e.g., rr-latency app).
 `<id>` is an incremental id of the VM starting from 1.
 The address of the VM will be computed as `10.0.0.<id>`.
 ```bash
-cd radiobox/apps/rr-latency/radiobox
+cd sure/apps/rr-latency/sure
 sudo ./run.sh <id> <args>
 ```
 

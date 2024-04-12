@@ -22,14 +22,14 @@ struct coroutine {
 	aco_t *handle;
 	aco_share_stack_t *stack;
 	/* Data of upstream request */
-	struct unimsg_sock *up_sock;
+	int up_sock;
 	struct unimsg_shm_desc up_desc;
 	/* Data of downtream request */
 	struct unimsg_shm_desc *down_desc;
 };
 
 static struct coroutine coroutines[MAX_COROUTINES];
-static struct unimsg_sock *downstream_socks[NUM_SERVICES];
+static int downstream_socks[NUM_SERVICES];
 static handle_request_t request_handler;
 static aco_t *main_co;
 static unsigned available_cos[MAX_COROUTINES];
@@ -72,8 +72,7 @@ static void coroutine_fn()
 	aco_exit();
 }
 
-static void handle_downstream(struct unimsg_sock *s,
-			      struct pending_buffer *pending)
+static void handle_downstream(int s, struct pending_buffer *pending)
 {
 	struct unimsg_shm_desc descs[UNIMSG_MAX_DESCS_BULK];
 	unsigned ndescs = UNIMSG_MAX_DESCS_BULK;
@@ -128,8 +127,7 @@ static void handle_downstream(struct unimsg_sock *s,
 #endif
 
 __unused
-static int handle_upstream_http(struct unimsg_sock *s,
-				struct pending_buffer *pending __unused)
+static int handle_upstream_http(int s, struct pending_buffer *pending __unused)
 {
 	/* Find available coroutine */
 	if (n_available_cos == 0) {
@@ -164,8 +162,7 @@ static int handle_upstream_http(struct unimsg_sock *s,
 }
 
 __unused
-static int handle_upstream_grpc(struct unimsg_sock *s,
-				struct pending_buffer *pending)
+static int handle_upstream_grpc(int s, struct pending_buffer *pending)
 {
 	/* Check available coroutine */
 	if (n_available_cos == 0) {
@@ -241,7 +238,7 @@ static void run_service(unsigned id, handle_request_t handler,
 			int *dependencies, unsigned ndependencies)
 {
 	int rc;
-	struct unimsg_sock *socks[UNIMSG_MAX_NSOCKS];
+	int socks[UNIMSG_MAX_NSOCKS];
 	struct pending_buffer pending_buffers[UNIMSG_MAX_NSOCKS];
 	int ready[UNIMSG_MAX_NSOCKS];
 	unsigned nsocks = 1;
@@ -265,10 +262,10 @@ static void run_service(unsigned id, handle_request_t handler,
 	for (unsigned i = 0; i < ndependencies; i++) {
 		unsigned id = dependencies[i];
 
-		rc = unimsg_socket(&socks[nsocks]);
-		if (rc) {
+		socks[nsocks] = unimsg_socket();
+		if (socks[nsocks] < 0) {
 			fprintf(stderr, "Error creating unimsg socket: %s\n",
-				strerror(-rc));
+				strerror(-socks[nsocks]));
 			exit(1);
 		}
 
@@ -287,10 +284,10 @@ static void run_service(unsigned id, handle_request_t handler,
 	}
 
 	/* Listen for incoming connections */
-	rc = unimsg_socket(&socks[0]);
-	if (rc) {
+	socks[0] = unimsg_socket();
+	if (socks[0] < 0) {
 		fprintf(stderr, "Error creating unimsg socket: %s\n",
-			strerror(-rc));
+			strerror(-socks[0]));
 		exit(1);
 	}
 	rc = unimsg_bind(socks[0], services[id].port);
@@ -364,11 +361,10 @@ static void run_service(unsigned id, handle_request_t handler,
 				exit(1);
 			}
 
-			struct unimsg_sock *s;
-			rc = unimsg_accept(socks[0], &s, 1);
-			if (rc) {
+			int s = unimsg_accept(socks[0], 1);
+			if (s < 0) {
 				fprintf(stderr, "Error accepting connection: "
-					"%s\n", strerror(-rc));
+					"%s\n", strerror(-s));
 				_ERR_CLOSE(socks[0]);
 			}
 

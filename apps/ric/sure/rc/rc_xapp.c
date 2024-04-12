@@ -62,13 +62,14 @@ static void parse_command_line(int argc, char **argv)
 int main(int argc, char *argv[])
 {
 	int rc;
-	struct unimsg_sock *lsock, *sock;
+	int lsock, sock;
 
 	parse_command_line(argc, argv);
 
-	rc = unimsg_socket(&lsock);
-	if (rc) {
-		fprintf(stderr, "Error creating socket: %s\n", strerror(-rc));
+	lsock = unimsg_socket();
+	if (lsock < 0) {
+		fprintf(stderr, "Error creating socket: %s\n",
+			strerror(-lsock));
 		exit(1);
 	}
 
@@ -88,10 +89,10 @@ int main(int argc, char *argv[])
 	printf("[RC] Waiting for TS connections\n");
 
 	for (unsigned i = 0; i < opt_iterations; i++) {
-		rc = unimsg_accept(lsock, &sock, 0);
-		if (rc) {
+		sock = unimsg_accept(lsock, 0);
+		if (sock < 0) {
 			fprintf(stderr, "Error accepting connection: %s\n",
-				strerror(-rc));
+				strerror(-sock));
 			exit(1);
 		}
 

@@ -100,10 +100,9 @@ int main(int argc, char *argv[])
 
 	parse_command_line(argc, argv);
 
-	struct unimsg_sock *sock;
-	rc = unimsg_socket(&sock);
-	if (rc) {
-		fprintf(stderr, "Error creating socket: %s\n", strerror(-rc));
+	int sock = unimsg_socket();
+	if (sock < 0) {
+		fprintf(stderr, "Error creating socket: %s\n", strerror(-sock));
 		exit(1);
 	}
 

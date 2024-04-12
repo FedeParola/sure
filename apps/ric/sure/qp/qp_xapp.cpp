@@ -17,7 +17,7 @@
 using namespace rapidjson;
 using namespace std;
 
-static struct unimsg_sock *sock;
+static int sock;
 static unsigned opt_iterations = 0;
 static unsigned opt_prediciton_time = 0;
 static unsigned opt_cells = DEFAULT_CELLS;
@@ -150,9 +150,9 @@ int main(int argc, char *argv[])
 
 	parse_command_line(argc, argv);
 
-	rc = unimsg_socket(&sock);
-	if (rc) {
-		fprintf(stderr, "Error creating socket: %s\n", strerror(-rc));
+	sock = unimsg_socket();
+	if (sock < 0) {
+		fprintf(stderr, "Error creating socket: %s\n", strerror(-sock));
 		exit(1);
 	}
 
@@ -171,11 +171,10 @@ int main(int argc, char *argv[])
 
 	cout << "[QP] Waiting for TS connection\n";
 
-	struct unimsg_sock *tmp_sock;
-	rc = unimsg_accept(sock, &tmp_sock, 0);
-	if (rc) {
+	int tmp_sock = unimsg_accept(sock, 0);
+	if (tmp_sock < 0) {
 		fprintf(stderr, "Error accepting connection: %s\n",
-			strerror(-rc));
+			strerror(-tmp_sock));
 		exit(1);
 	}
 

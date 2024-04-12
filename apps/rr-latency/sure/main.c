@@ -152,7 +152,7 @@ static void parse_command_line(int argc, char **argv)
 	}
 }
 
-static void do_client_rr(struct unimsg_sock *s)
+static void do_client_rr(int s)
 {
 	int rc;
 	unsigned nrecv;
@@ -161,7 +161,7 @@ static void do_client_rr(struct unimsg_sock *s)
 #endif
 
 	if (!opt_buffers_reuse) {
-		rc = unimsg_buffer_get(descs, ndescs); 
+		rc = unimsg_buffer_get(descs, ndescs);
 		if (rc) {
 			fprintf(stderr, "Error getting shm buffer: %s\n",
 				strerror(-rc));
@@ -231,7 +231,7 @@ static void do_client_rr(struct unimsg_sock *s)
 		unimsg_buffer_put(&descs[ndescs], rdescs - ndescs);
 }
 
-static void client(struct unimsg_sock *s)
+static void client(int s)
 {
 	int rc;
 
@@ -247,7 +247,7 @@ static void client(struct unimsg_sock *s)
 
 	ndescs = (opt_size - 1) / UNIMSG_BUFFER_AVAILABLE + 1;
 	if (opt_buffers_reuse) {
-		rc = unimsg_buffer_get(descs, ndescs); 
+		rc = unimsg_buffer_get(descs, ndescs);
 		if (rc) {
 			fprintf(stderr, "Error getting shm buffer: %s\n",
 				strerror(-rc));
@@ -304,7 +304,7 @@ static void client(struct unimsg_sock *s)
 #endif
 }
 
-static void server(struct unimsg_sock *s)
+static void server(int s)
 {
 	int rc;
 	struct unimsg_shm_desc descs[UNIMSG_MAX_DESCS_BULK];
@@ -327,11 +327,10 @@ static void server(struct unimsg_sock *s)
 	}
 	printf("Socket listening\n");
 
-	struct unimsg_sock *cs;
-	rc = unimsg_accept(s, &cs, 0);
-	if (rc) {
+	int cs = unimsg_accept(s, 0);
+	if (cs < 0) {
 		fprintf(stderr, "Error accepting connection: %s\n",
-			strerror(-rc));
+			strerror(-cs));
 		ERR_CLOSE(s);
 	}
 	printf("Connection accepted\n");
@@ -434,15 +433,12 @@ static void server(struct unimsg_sock *s)
 
 int main(int argc, char *argv[])
 {
-	int rc;
-	struct unimsg_sock *s;
-
 	parse_command_line(argc, argv);
 
-	rc = unimsg_socket(&s);
-	if (rc) {
+	int s = unimsg_socket();
+	if (s < 0) {
 		fprintf(stderr, "Error creating unimsg socket: %s\n",
-			strerror(-rc));
+			strerror(-s));
 		return 1;
 	}
 	printf("Socket created\n");

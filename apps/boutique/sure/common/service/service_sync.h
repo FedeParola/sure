@@ -14,7 +14,7 @@
 #define DEBUG_SVC(...) (void)0
 #endif
 
-static int handle_socket(struct unimsg_sock *s, handle_request_t handle_request,
+static int handle_socket(int s, handle_request_t handle_request,
 			 struct pending_buffer *pending)
 {
 	struct unimsg_shm_desc descs[UNIMSG_MAX_DESCS_BULK];
@@ -83,15 +83,15 @@ static int handle_socket(struct unimsg_sock *s, handle_request_t handle_request,
 static void run_service(unsigned id, handle_request_t handle_request)
 {
 	int rc;
-	struct unimsg_sock *socks[UNIMSG_MAX_NSOCKS];
+	int socks[UNIMSG_MAX_NSOCKS];
 	struct pending_buffer pending_buffers[UNIMSG_MAX_NSOCKS];
 	int ready[UNIMSG_MAX_NSOCKS];
 	unsigned nsocks = 1;
 
-	rc = unimsg_socket(&socks[0]);
-	if (rc) {
+	socks[0] = unimsg_socket();
+	if (socks[0] < 0) {
 		fprintf(stderr, "Error creating unimsg socket: %s\n",
-			strerror(-rc));
+			strerror(-socks[0]));
 		exit(1);
 	}
 
@@ -143,11 +143,10 @@ static void run_service(unsigned id, handle_request_t handle_request)
 				exit(1);
 			}
 
-			struct unimsg_sock *s;
-			rc = unimsg_accept(socks[0], &s, 1);
-			if (rc) {
+			int s = unimsg_accept(socks[0], 1);
+			if (s < 0) {
 				fprintf(stderr, "Error accepting connection: "
-					"%s\n", strerror(-rc));
+					"%s\n", strerror(-s));
 				_ERR_CLOSE(socks[0]);
 			}
 
@@ -158,7 +157,7 @@ static void run_service(unsigned id, handle_request_t handle_request)
 	}
 }
 
-static struct unimsg_sock *socks[NUM_SERVICES];
+static int socks[NUM_SERVICES];
 
 __unused
 static void do_rpc(struct unimsg_shm_desc *desc, unsigned service)

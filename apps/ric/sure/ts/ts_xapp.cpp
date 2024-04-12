@@ -25,8 +25,8 @@
 
 static unsigned opt_iterations = 0;
 static int downlink_threshold = 0;  // A1 policy type 20008 (in percentage)
-static struct unimsg_sock *ad_sock;
-static struct unimsg_sock *qp_sock;
+static int ad_sock;
+static int qp_sock;
 static unsigned it = 0;
 static unsigned long total_latency = 0;
 static struct option long_options[] = {
@@ -177,13 +177,14 @@ static char post_template[] = "POST %s HTTP/1.1\r\n" /* url */
 
 static struct rest_resp do_post(__u32 addr, __u16 port, string url, string body)
 {
-	struct unimsg_sock *rc_sock;
+	int rc_sock;
 	struct unimsg_shm_desc desc;
 	int rc;
 
-	rc = unimsg_socket(&rc_sock);
-	if (rc) {
-		fprintf(stderr, "Error creating socket: %s\n", strerror(-rc));
+	rc_sock = unimsg_socket();
+	if (rc_sock < 0) {
+		fprintf(stderr, "Error creating socket: %s\n",
+			strerror(-rc_sock));
 		exit(1);
 	}
 
@@ -479,14 +480,15 @@ void ad_callback(struct unimsg_shm_desc *descs, unsigned ndescs)
 
 int main(int argc, char *argv[])
 {
-	struct unimsg_sock *lsock;
+	int lsock;
 	int rc;
 
 	parse_command_line(argc, argv);
 
-	rc = unimsg_socket(&lsock);
-	if (rc) {
-		fprintf(stderr, "Error creating socket: %s\n", strerror(-rc));
+	lsock = unimsg_socket();
+	if (lsock < 0) {
+		fprintf(stderr, "Error creating socket: %s\n",
+			strerror(-lsock));
 		exit(1);
 	}
 
@@ -505,10 +507,10 @@ int main(int argc, char *argv[])
 
 	cout << "[INFO] Waiting for AD connection\n";
 
-	rc = unimsg_accept(lsock, &ad_sock, 0);
-	if (rc) {
+	ad_sock = unimsg_accept(lsock, 0);
+	if (ad_sock < 0) {
 		fprintf(stderr, "Error accepting connection: %s\n",
-			strerror(-rc));
+			strerror(-ad_sock));
 		exit(1);
 	}
 
@@ -516,9 +518,10 @@ int main(int argc, char *argv[])
 
 	cout << "[INFO] AD connected\n";
 
-	rc = unimsg_socket(&qp_sock);
-	if (rc) {
-		fprintf(stderr, "Error creating socket: %s\n", strerror(-rc));
+	qp_sock = unimsg_socket();
+	if (qp_sock) {
+		fprintf(stderr, "Error creating socket: %s\n",
+			strerror(-qp_sock));
 		exit(1);
 	}
 

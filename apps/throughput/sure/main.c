@@ -122,7 +122,7 @@ static void parse_command_line(int argc, char **argv)
 	}
 }
 
-static void client_send(struct unimsg_sock *s, unsigned id)
+static void client_send(int s, unsigned id)
 {
 	int rc;
 
@@ -147,7 +147,7 @@ static void client_send(struct unimsg_sock *s, unsigned id)
 	}
 }
 
-static void client_recv(struct unimsg_sock *s, unsigned id, int nonblock)
+static void client_recv(int s, unsigned id, int nonblock)
 {
 	int rc;
 	unsigned nrecv;
@@ -174,7 +174,7 @@ static void client_recv(struct unimsg_sock *s, unsigned id, int nonblock)
 static void client()
 {
 	int rc;
-	struct unimsg_sock *socks[UNIMSG_MAX_NSOCKS];
+	int socks[UNIMSG_MAX_NSOCKS];
 	int ready[UNIMSG_MAX_NSOCKS];
 
 	printf("I'm the client\n");
@@ -182,12 +182,10 @@ static void client()
 	ndescs = (opt_size - 1) / UNIMSG_BUFFER_AVAILABLE + 1;
 
 	for (unsigned i = 0; i < opt_connections; i++) {
-		struct unimsg_sock *s;
-
-		rc = unimsg_socket(&s);
-		if (rc) {
+		int s = unimsg_socket();
+		if (s < 0) {
 			fprintf(stderr, "Error creating unimsg socket: %s\n",
-				strerror(-rc));
+				strerror(-s));
 			exit(1);
 		}
 
@@ -244,7 +242,7 @@ static void client()
 }
 
 /* Returns 1 if the connection is closed */
-static int do_server_rr(struct unimsg_sock *s)
+static int do_server_rr(int s)
 {
 	int rc;
 	struct unimsg_shm_desc descs[UNIMSG_MAX_DESCS_BULK];
@@ -300,16 +298,16 @@ static int do_server_rr(struct unimsg_sock *s)
 static void server()
 {
 	int rc;
-	struct unimsg_sock *socks[UNIMSG_MAX_NSOCKS];
+	int socks[UNIMSG_MAX_NSOCKS];
 	int ready[UNIMSG_MAX_NSOCKS];
 	unsigned nsocks = 1;
 
 	printf("I'm the server\n");
 
-	rc = unimsg_socket(&socks[0]);
-	if (rc) {
+	socks[0] = unimsg_socket();
+	if (socks[0] < 0) {
 		fprintf(stderr, "Error creating unimsg socket: %s\n",
-			strerror(-rc));
+			strerror(-socks[0]));
 		exit(1);
 	}
 	printf("Socket created\n");
@@ -358,11 +356,10 @@ static void server()
 		}
 
 		if (ready[0]) {
-			struct unimsg_sock *s;
-			rc = unimsg_accept(socks[0], &s, 1);
-			if (rc) {
+			int s = unimsg_accept(socks[0], 1);
+			if (s < 0) {
 				fprintf(stderr, "Error accepting connection: "
-					"%s\n", strerror(-rc));
+					"%s\n", strerror(-s));
 				exit(1);
 			}
 

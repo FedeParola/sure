@@ -127,7 +127,7 @@ static void client_send(struct unimsg_sock *s, unsigned id)
 	int rc;
 
 	if (!opt_buffers_reuse) {
-		rc = unimsg_buffer_get(descs[id], ndescs); 
+		rc = unimsg_buffer_get(descs[id], ndescs);
 		if (rc) {
 			fprintf(stderr, "Error getting shm buffer: %s\n",
 				strerror(-rc));
@@ -200,7 +200,7 @@ static void client()
 
 		socks[i] = s;
 
-		rc = unimsg_buffer_get(descs[i], ndescs); 
+		rc = unimsg_buffer_get(descs[i], ndescs);
 		if (rc) {
 			fprintf(stderr, "Error getting shm buffer: %s\n",
 				strerror(-rc));
@@ -234,7 +234,7 @@ static void client()
 		 < (unsigned long)opt_duration * 1000000000);
 
 	for (unsigned i = 0; i < opt_connections; i++) {
-		client_recv(socks[i], 0, i);
+		client_recv(socks[i], 0, 0);
 		if (opt_buffers_reuse)
 			unimsg_buffer_put(descs[i], ndescs);
 		unimsg_close(socks[i]);
@@ -365,7 +365,7 @@ static void server()
 					"%s\n", strerror(-rc));
 				exit(1);
 			}
-			
+
 			if (!started) {
 				printf("Handling connections\n");
 				started = 1;

@@ -1,0 +1,32 @@
+diff --git a/plat/kvm/x86/multiboot.c b/plat/kvm/x86/multiboot.c
+index c3ae2ad6..e51f20e1 100644
+--- a/plat/kvm/x86/multiboot.c
++++ b/plat/kvm/x86/multiboot.c
+@@ -10,7 +10,7 @@
+ #include <uk/arch/paging.h>
+ #include <uk/plat/bootstrap.h>
+ #include <uk/plat/common/bootinfo.h>
+-#include <uk/plat/common/lcpu.h>
++#include <uk/plat/common/cpu.h>
+ #include <uk/plat/common/memory.h>
+ #include <uk/plat/common/sections.h>
+ #include <uk/reloc.h>
+@@ -36,6 +36,9 @@ static inline void mrd_insert(struct ukplat_bootinfo *bi,
+ 		multiboot_crash("Cannot insert bootinfo memory region", rc);
+ }
+ 
++#define GUEST_EXIT_PORT  0xf4
++#define GUEST_START_BOOT 0x3
++
+ /**
+  * Multiboot entry point called after lcpu initialization. We enter with the
+  * 1:1 boot page table set. Physical and virtual addresses thus match for all
+@@ -43,6 +46,8 @@ static inline void mrd_insert(struct ukplat_bootinfo *bi,
+  */
+ void multiboot_entry(struct lcpu *lcpu, struct multiboot_info *mi)
+ {
++	outb(GUEST_EXIT_PORT, GUEST_START_BOOT);
++
+ 	struct ukplat_bootinfo *bi;
+ 	struct ukplat_memregion_desc mrd = {0};
+ 	multiboot_memory_map_t *m;

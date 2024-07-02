@@ -1,0 +1,6 @@
+$(eval $(call addlib,appboot))
+
+# TODO Remove as soon as plat dependencies go away
+APPBOOT_CINCLUDES-y += -I$(UK_PLAT_COMMON_BASE)/include
+
+APPBOOT_SRCS-y += $(APPBOOT_BASE)/main.c

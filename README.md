@@ -38,7 +38,7 @@ Build and install Z-stack:
 git clone https://github.com/FedeParola/f-stack.git
 
 cd f-stack/dpdk
-meson -Denable_kmods=true build
+meson build
 ninja -C build
 sudo ninja -C build install
 
@@ -74,16 +74,11 @@ make -j
 
 ### Running SURE apps
 
-Allocate 1G hugepages:
+Allocate 2M hugepages:
 ```bash
-echo 16 | sudo tee /sys/kernel/mm/hugepages/hugepages-1048576kB/nr_hugepages
+echo 1024 | sudo tee /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages
 sudo umount /dev/hugepages
-sudo mount -t hugetlbfs -o pagesize=1G none /dev/hugepages
-```
-
-Allocate shared memory buffers file:
-```bash
-sudo truncate -s 1G /dev/hugepages/unimsg_buffers
+sudo mount -t hugetlbfs -o pagesize=2M none /dev/hugepages
 ```
 
 Run the manager:

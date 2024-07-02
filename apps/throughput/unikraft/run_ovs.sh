@@ -14,7 +14,7 @@ eval qemu-system-x86_64 \
 	-net none \
 	-kernel $(dirname $0)/build/unikraft_qemu-x86_64 \
 	-enable-kvm \
-	-cpu host \
+	-cpu host,migratable=no \
 	-m 1024 \
 	-object memory-backend-file,id=mem,size=1024M,mem-path=/dev/hugepages,share=on \
 	-mem-prealloc \

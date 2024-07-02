@@ -14,12 +14,10 @@ eval qemu-system-x86_64 \
 	-net none \
 	-kernel "$(dirname $0)/build/rc_qemu-x86_64" \
 	-enable-kvm \
-	-cpu host \
+	-cpu host,migratable=no \
 	-m 1024 \
 	-device ivshmem-doorbell,vectors=1,chardev=id \
 	-chardev socket,path=/tmp/ivshmem_socket,id=id \
-	-object memory-backend-file,size=1G,share=true,mem-path=/dev/hugepages/unimsg_buffers,id=buffers_mem \
-	-device ivshmem-plain,memdev=buffers_mem \
 	-object memory-backend-file,size=4K,share=true,mem-path=/dev/shm/unimsg_sidecar_$id,id=sidecar_mem \
 	-device ivshmem-plain,memdev=sidecar_mem \
         -append \""$@"\"

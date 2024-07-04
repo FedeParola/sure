@@ -6,7 +6,11 @@ SERVICES := adservice cartservice checkoutservice currencyservice	\
 
 all: $(SERVICES)
 
-$(SERVICES):
+%/.config:
+	$(info === Configuring $* ===)
+	@$(MAKE) -C $* UK_DEFCONFIG=$(CURDIR)/configs/default_defconfig defconfig
+
+$(SERVICES): %: %/.config
 	$(info )
 	$(info ==== Building $@ ====)
 	@$(MAKE) -C $@ -j

@@ -41,32 +41,44 @@ struct service_desc {
 	uint16_t port;
 };
 
-#define SERVICE_ADDR(id) (0x0000000a | ((id + 1) << 24))
-#define SERVICE_PORT(id) (5000 + (id + 1))
-#define DEFINE_SERVICE(_id, _name) {					\
+#define DEFINE_SERVICE(_id, _name, _addr, _port) {			\
 	.id = (_id),							\
-	.name = _name,							\
-	.addr = SERVICE_ADDR(_id),					\
-	.port = SERVICE_PORT(_id)					\
+	.name = (_name),						\
+	.addr = (_addr),						\
+	.port = (_port)							\
+}
+#define DEFAULT_SERVICE(_id, _name) {					\
+	.id = (_id),							\
+	.name = (_name),						\
+	.addr = 0x0000000a | ((_id + 1) << 24),				\
+	.port = 5000 + (_id + 1)					\
 }
 
 static struct service_desc services[] = {
-	DEFINE_SERVICE(AD_SERVICE, "ad"),
-	DEFINE_SERVICE(EMAIL_SERVICE, "email"),
-	DEFINE_SERVICE(PAYMENT_SERVICE, "payment"),
-	DEFINE_SERVICE(CURRENCY_SERVICE, "currency"),
-	DEFINE_SERVICE(SHIPPING_SERVICE, "shipping"),
-	DEFINE_SERVICE(PRODUCTCATALOG_SERVICE, "product catalog"),
-	DEFINE_SERVICE(CART_SERVICE, "cart"),
-	DEFINE_SERVICE(RECOMMENDATION_SERVICE, "recommendation"),
-	DEFINE_SERVICE(CHECKOUT_SERVICE, "checkout"),
-	{
-		.id = FRONTEND,
-		.name = "frontend",
-		.addr = SERVICE_ADDR(FRONTEND),
-		.port = 80
-	},
+	DEFAULT_SERVICE(AD_SERVICE, "ad"),
+	DEFAULT_SERVICE(EMAIL_SERVICE, "email"),
+	DEFAULT_SERVICE(PAYMENT_SERVICE, "payment"),
+	DEFAULT_SERVICE(CURRENCY_SERVICE, "currency"),
+	DEFAULT_SERVICE(SHIPPING_SERVICE, "shipping"),
+	DEFAULT_SERVICE(PRODUCTCATALOG_SERVICE, "product catalog"),
+	DEFAULT_SERVICE(CART_SERVICE, "cart"),
+	DEFAULT_SERVICE(RECOMMENDATION_SERVICE, "recommendation"),
+	DEFAULT_SERVICE(CHECKOUT_SERVICE, "checkout"),
+	DEFAULT_SERVICE(FRONTEND, "frontend"),
 };
+
+// static struct service_desc services[] = {
+// 	DEFINE_SERVICE(AD_SERVICE, "ad", 0x0101000a, 5001),
+// 	DEFINE_SERVICE(EMAIL_SERVICE, "email", 0x0201000a, 5002),
+// 	DEFINE_SERVICE(PAYMENT_SERVICE, "payment", 0x0301000a, 5003),
+// 	DEFINE_SERVICE(CURRENCY_SERVICE, "currency", 0x0401000a, 5004),
+// 	DEFINE_SERVICE(SHIPPING_SERVICE, "shipping", 0x0501000a, 5005),
+// 	DEFINE_SERVICE(PRODUCTCATALOG_SERVICE, "product catalog", 0x0601000a, 5006),
+// 	DEFINE_SERVICE(CART_SERVICE, "cart", 0x0701000a, 5007),
+// 	DEFINE_SERVICE(RECOMMENDATION_SERVICE, "recommendation", 0x0100000a, 5001),
+// 	DEFINE_SERVICE(CHECKOUT_SERVICE, "checkout", 0x0200000a, 5002),
+// 	DEFINE_SERVICE(FRONTEND, "frontend", 0x0300000a, 5003),
+// };
 
 #define _ERR_CLOSE(s) ({ unimsg_close(s); exit(1); })
 #define __unused __attribute__((unused))

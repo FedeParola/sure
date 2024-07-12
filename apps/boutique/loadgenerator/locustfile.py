@@ -91,7 +91,8 @@ class WebsiteUser(FastHttpUser):
 @events.request.add_listener
 def hook_request(request_type, name, response_time, response_length, response,
                  context, exception, **kw):
-    stats_file.write(str(time.time()) + ";" + request_type + ";" + name + ";" + str(response_time) + "\n")
+    if stats_file:
+        stats_file.write(str(time.time()) + ";" + request_type + ";" + name + ";" + str(response_time) + "\n")
 
 @events.quitting.add_listener
 def hook_quitting(environment, **kw):
@@ -101,5 +102,6 @@ def hook_quitting(environment, **kw):
 @events.init.add_listener
 def hook_init(environment, **kw):
     global stats_file
+    stats_file = None
     if isinstance(environment.runner, runners.WorkerRunner):
         stats_file = open(f'resp_time_{environment.runner.worker_index}.csv', 'w')

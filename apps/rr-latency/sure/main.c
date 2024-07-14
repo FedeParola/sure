@@ -12,6 +12,7 @@
 #define DEFAULT_DELAY 0
 #define SERVER_ADDR 0x0100000a /* 10.0.0.1 */
 #define SERVER_PORT 5000
+#define MAX_MSG_SIZE 8192
 #define ERR_CLOSE(s) ({ unimsg_close(s); exit(1); })
 #define ERR_PUT(descs, ndescs, s) ({					\
 	unimsg_buffer_put(descs, ndescs);				\
@@ -37,8 +38,6 @@ static unsigned opt_delay = DEFAULT_DELAY;
 static unsigned opt_http = 0;
 static unsigned http_body_size;
 static unsigned opt_buffers_reuse = 0;
-static struct unimsg_shm_desc descs[UNIMSG_MAX_DESCS_BULK];
-static unsigned ndescs;
 static struct option long_options[] = {
 	{"iterations", required_argument, 0, 'i'},
 	{"size", required_argument, 0, 's'},
@@ -155,40 +154,26 @@ static void parse_command_line(int argc, char **argv)
 static void do_client_rr(struct unimsg_sock *s)
 {
 	int rc;
-	unsigned nrecv;
+	char buf[MAX_MSG_SIZE];
 #ifdef ADDITIONAL_STATS
 	unsigned long start, stop;
 #endif
 
-	if (!opt_buffers_reuse) {
-		rc = unimsg_buffer_get(descs, ndescs); 
-		if (rc) {
-			fprintf(stderr, "Error getting shm buffer: %s\n",
-				strerror(-rc));
-			ERR_CLOSE(s);
-		}
-	}
-
-	for (unsigned i = 0; i < ndescs; i++) {
-		*(char *)descs[i].addr = 0;
-		descs[i].size = UNIMSG_BUFFER_AVAILABLE;
-	}
-	descs[ndescs - 1].size = opt_size % UNIMSG_BUFFER_AVAILABLE;
-	if (descs[ndescs - 1].size == 0)
-		descs[ndescs - 1].size = UNIMSG_BUFFER_AVAILABLE;
 	if (opt_http) {
-		strcpy(descs[0].addr, http_req);
-		descs[0].size = sizeof(http_req);
+		strcpy(buf, http_req);
+		opt_size = sizeof(http_req);
+	} else {
+		buf[0] = 5;
 	}
 
 	do {
 		STORE_TIME(start);
-		rc = unimsg_send(s, descs, ndescs, opt_busy_poll);
+		rc = unimsg_send(s, buf, opt_size, opt_busy_poll);
 		STORE_TIME(stop);
 	} while (opt_busy_poll && rc == -EAGAIN);
 	if (rc) {
-		fprintf(stderr, "Error sending descs: %s\n", strerror(-rc));
-		ERR_PUT(descs, ndescs, s);
+		fprintf(stderr, "Error sending message: %s\n", strerror(-rc));
+		ERR_CLOSE(s);
 	}
 
 #ifdef ADDITIONAL_STATS
@@ -196,24 +181,25 @@ static void do_client_rr(struct unimsg_sock *s)
 		send_time += stop - start;
 #endif
 
-	unsigned rdescs = 0, rsize = 0;
+	unsigned long nrecv = 0;
 	do {
 		do {
+			unsigned long len = sizeof(buf);
 			STORE_TIME(start);
-			nrecv = UNIMSG_MAX_DESCS_BULK;
-			rc = unimsg_recv(s, &descs[rdescs], &nrecv,
-					 opt_busy_poll);
+			rc = unimsg_recv(s, buf, &len, opt_busy_poll);
 			STORE_TIME(stop);
 
-			if (!rc) {
-				for (unsigned i = 0; i < nrecv; i++)
-					rsize += descs[rdescs + i].size;
-				rdescs += nrecv;
-			}
+			if (!rc)
+				nrecv += len;
 		} while (opt_busy_poll && rc == -EAGAIN);
-	} while (!opt_http && !rc && rsize < opt_size);
+	} while (!opt_http && !rc && nrecv < opt_size);
 	if (rc) {
-		fprintf(stderr, "Error receiving descs: %s\n", strerror(-rc));
+		fprintf(stderr, "Error receiving message: %s\n", strerror(-rc));
+		ERR_CLOSE(s);
+	}
+
+	if (buf[0] != 6) {
+		fprintf(stderr, "Received unexpected mesage: %d\n", buf[0]);
 		ERR_CLOSE(s);
 	}
 
@@ -221,14 +207,6 @@ static void do_client_rr(struct unimsg_sock *s)
 	if (iterations_count > opt_warmup)
 		recv_time += stop - start;
 #endif
-
-	for (unsigned i = 0; i < rdescs; i++)
-		*(char *)descs[i].addr = 0;
-
-	if (!opt_buffers_reuse)
-		unimsg_buffer_put(descs, rdescs);
-	else if (rdescs > ndescs)
-		unimsg_buffer_put(&descs[ndescs], rdescs - ndescs);
 }
 
 static void client(struct unimsg_sock *s)
@@ -244,16 +222,6 @@ static void client(struct unimsg_sock *s)
 		ERR_CLOSE(s);
 	}
 	printf("Socket connected\n");
-
-	ndescs = (opt_size - 1) / UNIMSG_BUFFER_AVAILABLE + 1;
-	if (opt_buffers_reuse) {
-		rc = unimsg_buffer_get(descs, ndescs); 
-		if (rc) {
-			fprintf(stderr, "Error getting shm buffer: %s\n",
-				strerror(-rc));
-			ERR_CLOSE(s);
-		}
-	}
 
 	if (opt_warmup) {
 		printf("Performing %u warmup RRs...\n", opt_warmup);
@@ -287,9 +255,6 @@ static void client(struct unimsg_sock *s)
 	if (!opt_delay)
 		total = ukplat_monotonic_clock() - start;
 
-	if (opt_buffers_reuse)
-		unimsg_buffer_put(descs, ndescs);
-
 	unimsg_close(s);
 	printf("Socket closed\n");
 
@@ -307,8 +272,7 @@ static void client(struct unimsg_sock *s)
 static void server(struct unimsg_sock *s)
 {
 	int rc;
-	struct unimsg_shm_desc descs[UNIMSG_MAX_DESCS_BULK];
-	unsigned nrecv;
+	char buf[MAX_MSG_SIZE];
 
 	printf("I'm the server\n");
 
@@ -348,71 +312,51 @@ static void server(struct unimsg_sock *s)
 #ifdef ADDITIONAL_STATS
 		unsigned long start, stop;
 #endif
-		unsigned rdescs = 0, rsize = 0;
+		unsigned long nrecv = 0;
 		do {
 			do {
+				unsigned long len = sizeof(buf);
 				STORE_TIME(start);
-				nrecv = UNIMSG_MAX_DESCS_BULK;
-				rc = unimsg_recv(s, &descs[rdescs], &nrecv,
-						opt_busy_poll);
+				rc = unimsg_recv(s, buf, &len, opt_busy_poll);
 				STORE_TIME(stop);
 
-				if (!rc) {
-					for (unsigned i = 0; i < nrecv; i++)
-						rsize += descs[rdescs + i].size;
-					rdescs += nrecv;
-				}
+				if (!rc)
+					nrecv += len;
 			} while (opt_busy_poll && rc == -EAGAIN);
-		} while (!opt_http && !rc && rsize < opt_size);
+		} while (!opt_http && !rc && nrecv < opt_size);
 		if (rc == -ECONNRESET) {
 			break;
 		} else if (rc) {
-			fprintf(stderr, "Error receiving desc: %s\n",
+			fprintf(stderr, "Error receiving message: %s\n",
 				strerror(-rc));
 			ERR_CLOSE(s);
 		}
 
-		for (unsigned i = 0; i < rdescs; i++)
-			*(char *)descs[i].addr = 0;
+		if (buf[0] != 5) {
+			fprintf(stderr, "Received unexpected mesage: %d\n",
+				buf[0]);
+			ERR_CLOSE(s);
+		} else {
+			buf[0]++;
+		}
 
-		unsigned nsend = rdescs;
+		unsigned nsend = nrecv;
 		if (opt_http) {
-			nsend = (opt_size - 1) / UNIMSG_BUFFER_AVAILABLE + 1;
-			if (nsend > rdescs) {
-				rc = unimsg_buffer_get(&descs[rdescs],
-						       nsend - rdescs);
-				if (rc) {
-					fprintf(stderr, "Error getting shm "
-						"buffer: %s\n",	strerror(-rc));
-					ERR_CLOSE(s);
-				}
-
-			} else if (nsend < rdescs) {
-				unimsg_buffer_put(&descs[nsend],
-						  rdescs - nsend);
-			}
-
-			sprintf(descs[0].addr, http_resp, http_body_size);
-			for (unsigned i = 0; i < nsend - 1; i++)
-				descs[i].size = UNIMSG_BUFFER_AVAILABLE;
-			descs[nsend - 1].size =
-				opt_size % UNIMSG_BUFFER_AVAILABLE;
-			if (descs[nsend - 1].size == 0)
-				descs[nsend - 1].size = UNIMSG_BUFFER_AVAILABLE;
+			nsend = opt_size;
+			sprintf(buf, http_resp, http_body_size);
 		}
 
 		do {
 			STORE_TIME(start);
-			rc = unimsg_send(s, descs, nsend, opt_busy_poll);
+			rc = unimsg_send(s, buf, nsend, opt_busy_poll);
 			STORE_TIME(stop);
 		} while (opt_busy_poll && rc == -EAGAIN);
 		if (rc == -ECONNRESET) {
-			unimsg_buffer_put(descs, nsend);
 			break;
 		} else if (rc) {
-			fprintf(stderr, "Error sending desc: %s\n",
+			fprintf(stderr, "Error sending message: %s\n",
 				strerror(-rc));
-			ERR_PUT(descs, nsend, s);
+			ERR_CLOSE(s);
 		}
 
 #ifdef ADDITIONAL_STATS

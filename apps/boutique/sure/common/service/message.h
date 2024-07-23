@@ -7,6 +7,14 @@
 
 #include <stdint.h>
 
+#define MONEY_CURRENCY_CODE_SIZE 4
+#define PRODUCT_ID_SIZE		 11
+#define PRODUCT_NAME_SIZE	 22
+#define PRODUCT_DESCRIPTION_SIZE 83
+#define PRODUCT_PICTURE_SIZE	 49
+#define PRODUCT_CATEGORY_SIZE	 12
+#define PRODUCT_MAX_CATEGORIES	 2
+
 /**
  * // -----------------Cart service-----------------
  *
@@ -43,7 +51,7 @@
  */
 
 typedef struct _cartItem {
-	char ProductId[20];
+	char ProductId[PRODUCT_ID_SIZE];
 	int32_t Quantity;
 } CartItem;
 
@@ -91,12 +99,12 @@ typedef struct _getCartRR {
 typedef struct _listRecommendationsRequest {
 	char user_id[50];
 	unsigned num_product_ids;
-	char product_ids[10][20];
+	char product_ids[10][PRODUCT_ID_SIZE];
 } ListRecommendationsRequest;
 
 typedef struct _listRecommendationsResponse{
 	unsigned num_product_ids;
-	char product_ids[10][20];
+	char product_ids[10][PRODUCT_ID_SIZE];
 } ListRecommendationsResponse;
 
 typedef struct _listRecommendationsRR {
@@ -144,7 +152,7 @@ typedef struct _listRecommendationsRR {
  */
 
 typedef struct _money {
-	char CurrencyCode[10];
+	char CurrencyCode[MONEY_CURRENCY_CODE_SIZE];
 	int64_t Units;
 	int32_t Nanos;
 } Money;
@@ -203,13 +211,13 @@ typedef struct _currencyConversionRR {
  */
 
 typedef struct _product {
-	char Id[20];
-	char Name[30];
-	char Description[100];
-	char Picture[60];
+	char Id[PRODUCT_ID_SIZE];
+	char Name[PRODUCT_NAME_SIZE];
+	char Description[PRODUCT_DESCRIPTION_SIZE];
+	char Picture[PRODUCT_PICTURE_SIZE];
 	Money PriceUsd;
 	int num_categories;
-	char Categories[5][20];
+	char Categories[PRODUCT_MAX_CATEGORIES][PRODUCT_CATEGORY_SIZE];
 } Product;
 
 typedef struct _listProductsResponse {
@@ -218,7 +226,7 @@ typedef struct _listProductsResponse {
 } ListProductsResponse;
 
 typedef struct _getProductRequest{
-	char Id[20];
+	char Id[PRODUCT_ID_SIZE];
 } GetProductRequest;
 
 typedef struct _getProductRR{

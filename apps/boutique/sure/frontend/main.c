@@ -49,6 +49,7 @@ getCurrencies(struct unimsg_shm_desc *desc)
 {
 	DEBUG("getCurrencies()\n");
 
+	unimsg_buffer_reset(desc);
 	struct rpc *rpc = desc->addr;
 	rpc->command = CURRENCY_GET_SUPPORTED_CURRENCIES;
 	desc->size = get_rpc_size(CURRENCY_GET_SUPPORTED_CURRENCIES);
@@ -63,6 +64,7 @@ getCurrencies(struct unimsg_shm_desc *desc)
 
 static ListProductsResponse *getProducts(struct unimsg_shm_desc *desc)
 {
+	unimsg_buffer_reset(desc);
 	struct rpc *rpc = desc->addr;
 	rpc->command = PRODUCTCATALOG_LIST_PRODUCTS;
 	desc->size = get_rpc_size(PRODUCTCATALOG_LIST_PRODUCTS);
@@ -75,6 +77,7 @@ static ListProductsResponse *getProducts(struct unimsg_shm_desc *desc)
 
 static Cart *getCart(struct unimsg_shm_desc *desc, char *user_id)
 {
+	unimsg_buffer_reset(desc);
 	struct rpc *rpc = desc->addr;
 	rpc->command = CART_GET_CART;
 	desc->size = get_rpc_size(CART_GET_CART);
@@ -89,6 +92,7 @@ static Cart *getCart(struct unimsg_shm_desc *desc, char *user_id)
 static Money convertCurrency(struct unimsg_shm_desc *desc, Money price_usd,
 			     char *user_currency)
 {
+	unimsg_buffer_reset(desc);
 	struct rpc *rpc = desc->addr;
 	rpc->command = CURRENCY_CONVERT;
 	desc->size = get_rpc_size(CURRENCY_CONVERT);
@@ -107,6 +111,7 @@ static Money convertCurrency(struct unimsg_shm_desc *desc, Money price_usd,
 static AdResponse *getAd(struct unimsg_shm_desc *desc, char *ctx_keys[],
 			 unsigned num_ctx_keys)
 {
+	unimsg_buffer_reset(desc);
 	struct rpc *rpc = desc->addr;
 	rpc->command = AD_GET_ADS;
 	desc->size = get_rpc_size(AD_GET_ADS);
@@ -165,6 +170,7 @@ static void homeHandler(struct unimsg_shm_desc *desc)
 
 static Product getProduct(struct unimsg_shm_desc *desc, char *product_id)
 {
+	unimsg_buffer_reset(desc);
 	struct rpc *rpc = desc->addr;
 	rpc->command = PRODUCTCATALOG_GET_PRODUCT;
 	desc->size = get_rpc_size(PRODUCTCATALOG_GET_PRODUCT);
@@ -182,6 +188,7 @@ getRecommendations(struct unimsg_shm_desc *desc, char *user_id,
 {
 	DEBUG("getRecommendations()\n");
 
+	unimsg_buffer_reset(desc);
 	struct rpc *rpc = desc->addr;
 	rpc->command =  RECOMMENDATION_LIST_RECOMMENDATIONS;
 	desc->size = get_rpc_size(RECOMMENDATION_LIST_RECOMMENDATIONS);
@@ -227,6 +234,7 @@ static Money getShippingQuote(struct unimsg_shm_desc *desc,
 			      CartItem *items, unsigned num_items,
 			      char *currency)
 {
+	unimsg_buffer_reset(desc);
 	struct rpc *rpc = desc->addr;
 	desc->size = get_rpc_size(SHIPPING_GET_QUOTE);
 	rpc->command = SHIPPING_GET_QUOTE;
@@ -279,6 +287,7 @@ static void viewCartHandler(struct unimsg_shm_desc *desc)
 static void insertCart(struct unimsg_shm_desc *desc, char *user_id,
 		       char *product_id, int quantity)
 {
+	unimsg_buffer_reset(desc);
 	struct rpc *rpc = desc->addr;
 	desc->size = get_rpc_size(CART_ADD_ITEM);
 	rpc->command = CART_ADD_ITEM;
@@ -316,6 +325,7 @@ static void addToCartHandler(struct unimsg_shm_desc *desc, char *body)
 
 static void emptyCart(struct unimsg_shm_desc *desc, char *user_id)
 {
+	unimsg_buffer_reset(desc);
 	struct rpc *rpc = desc->addr;
 	desc->size = get_rpc_size(CART_EMPTY_CART);
 	rpc->command = CART_EMPTY_CART;
@@ -421,6 +431,7 @@ static void placeOrderHandler(struct unimsg_shm_desc *desc, char *body __unused)
 	      credit_card_number, credit_card_expiration_month,
 	      credit_card_expiration_year, credit_card_cvv);
 
+	unimsg_buffer_reset(desc);
 	struct rpc *rpc = desc->addr;
 	rpc->command =  CHECKOUT_PLACE_ORDER;
 	desc->size = get_rpc_size(CHECKOUT_PLACE_ORDER);

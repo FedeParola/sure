@@ -51,6 +51,7 @@ static Product *getProduct(struct unimsg_shm_desc *desc, char *product_id)
 static Money convertCurrency(struct unimsg_shm_desc *desc, Money price_usd,
 			     char *user_currency)
 {
+	unimsg_buffer_reset(desc);
 	struct rpc *rpc = desc->addr;
 	rpc->command = CURRENCY_CONVERT;
 	desc->size = get_rpc_size(CURRENCY_CONVERT);
@@ -93,6 +94,7 @@ static void prepOrderItems(Cart *cart, char *user_currency,
 static Money quoteShipping(struct unimsg_shm_desc *desc, Address *address,
 			   Cart *cart)
 {
+	unimsg_buffer_reset(desc);
 	struct rpc *rpc = desc->addr;
 	rpc->command = SHIPPING_GET_QUOTE;
 	desc->size = get_rpc_size(SHIPPING_GET_QUOTE);
@@ -146,6 +148,7 @@ void prepareOrderItemsAndShippingQuoteFromCart(PlaceOrderRR *rr,
 static void chargeCard(struct unimsg_shm_desc *desc, Money amount,
 		       CreditCardInfo paymentInfo, char *transaction_id)
 {
+	unimsg_buffer_reset(desc);
 	struct rpc *rpc = desc->addr;
 	rpc->command = PAYMENT_CHARGE;
 	desc->size = get_rpc_size(PAYMENT_CHARGE);
@@ -163,6 +166,7 @@ static void shipOrder(struct unimsg_shm_desc *desc,
 		      Address *address, OrderItem *items, unsigned num_items,
 		      char *tracking_id)
 {
+	unimsg_buffer_reset(desc);
 	struct rpc *rpc = desc->addr;
 	desc->size = get_rpc_size(SHIPPING_SHIP_ORDER);
 	rpc->command = SHIPPING_SHIP_ORDER;
@@ -180,6 +184,7 @@ static void shipOrder(struct unimsg_shm_desc *desc,
 
 static void emptyUserCart(struct unimsg_shm_desc *desc, char *user_id)
 {
+	unimsg_buffer_reset(desc);
 	struct rpc *rpc = desc->addr;
 	desc->size = get_rpc_size(CART_EMPTY_CART);
 	rpc->command = CART_EMPTY_CART;
@@ -193,6 +198,7 @@ static void emptyUserCart(struct unimsg_shm_desc *desc, char *user_id)
 static void sendOrderConfirmation(struct unimsg_shm_desc *desc, char *email,
 				  OrderResult *order)
 {
+	unimsg_buffer_reset(desc);
 	struct rpc *rpc = desc->addr;
 	desc->size = get_rpc_size(EMAIL_SEND_ORDER_CONFIRMATION);
 	rpc->command = EMAIL_SEND_ORDER_CONFIRMATION;

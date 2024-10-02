@@ -1,0 +1,5 @@
+### Invisible option for dependencies
+config APPBOOT_DEPENDENCIES
+	bool
+	default y
+	select PAGING
